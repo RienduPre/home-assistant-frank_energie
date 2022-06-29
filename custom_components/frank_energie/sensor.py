@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio.windows_events import NULL
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from lib2to3.pgen2.token import NUMBER
 import logging
 from typing import Callable, List, Tuple
 
@@ -12,6 +14,7 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import (
     PLATFORM_SCHEMA,
+    STATE_CLASS_MEASUREMENT,
     SensorEntity,
     SensorEntityDescription,
 )
@@ -29,24 +32,39 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt, utcnow
 
-ATTRIBUTION = "Data provided by Frank Energie"
-DOMAIN = "frank_energie"
-DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+DOMAIN = "Frank Energie"
+DATA_URL = "https://frank-api.nl/graphql"
+# DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+# DATA_URL = "https://graphcdn.frankenergie.nl"
 ICON = "mdi:currency-eur"
-
+ATTRIBUTION = "Data provided by Frank Energie"
+SCAN_INTERVAL = timedelta(minutes=1)
 
 @dataclass
 class FrankEnergieEntityDescription(SensorEntityDescription):
     """Describes Frank Energie sensor entity."""
     value_fn: Callable[[dict], StateType] = None
 
-
+lendata = lambda data: len(data['elec'])
 SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
         key="elec_markup",
         name="Current electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: sum(data['elec']),
+        state_class=STATE_CLASS_MEASUREMENT
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_lasthour",
+        name="Last hour electricity price (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: sum(data['elec_lasthour']),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_nexthour",
+        name="Next hour electricity price (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: sum(data['elec_nexthour']),
     ),
     FrankEnergieEntityDescription(
         key="elec_market",
@@ -58,7 +76,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_tax",
         name="Current electricity price including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['elec'][0] + data['elec'][1],
+        value_fn=lambda data: data['elec'][0] + data['elec'][1] + data['elec'][2],
     ),
     FrankEnergieEntityDescription(
         key="gas_markup",
@@ -103,10 +121,79 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: max(data['today_elec']),
     ),
     FrankEnergieEntityDescription(
-        key="elec_avg",
-        name="Average electricity price today",
+        key="elec_tomorrow_min",
+        name="Lowest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / len(data['today_elec']), 5)
+        value_fn=lambda data: min(data['tonorrow_elec']),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_max",
+        name="Highest energy price tomorrow",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: max(data['tonorrow_elec']),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg",
+        name="Average electricity price today (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        # value_fn=lambda data: round(sum(data['today_elec']) / len(data['today_elec']), 3)
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg24",
+        name="Average electricity price today (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg48",
+        name="Average electricity price today+tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 48, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg72",
+        name="Average electricity price yesterday+today+tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 72, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg_tax",
+        name="Average electricity price today including tax",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg_market",
+        name="Average electricity market price today",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec_market']) / len(data['today_elec_market']), 3)
+        # value_fn=lambda data: round(sum(data['today_elec_market']) / 24, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_hourcount",
+        name="Number of hours with prices loaded",
+        icon = "mdi:numeric-0-box-multiple",
+        native_unit_of_measurement="",
+        value_fn=lambda data: len(data['elec_count'])
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg",
+        name="Average electricity price tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tonorrow_elec']) / 24, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg_tax",
+        name="Average electricity price tomorrow including tax",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tomorrow_elec_tax']) / 24, 3)
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg_market",
+        name="Average electricity market price tomorrow",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tomorrow_elec_market']) / 24, 3)
     ),
 )
 
@@ -125,7 +212,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None) -> None:
     """Set up the Frank Energie sensors."""
-    _LOGGER.debug("Setting up Frank Energie component")
+    _LOGGER.debug("Setting up Frank")
 
     websession = async_get_clientsession(hass)
 
@@ -151,7 +238,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: FrankEnergieCoordinator, description: FrankEnergieEntityDescription) -> None:
         """Initialize the sensor."""
         self.entity_description: FrankEnergieEntityDescription = description
-        self._attr_unique_id = f"frank_energie.{description.key}"
+        self._attr_unique_id = f"Frank Energie.{description.key}"
 
         self._update_job = HassJob(self.async_schedule_update_ha_state)
         self._unsub_update = None
@@ -160,11 +247,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
 
     async def async_update(self) -> None:
         """Get the latest data and updates the states."""
-        try:
-            self._attr_native_value = self.entity_description.value_fn(self.coordinator.processed_data())
-        except (TypeError, IndexError):
-            # No data available
-            self._attr_native_value = None
+        self._attr_native_value = self.entity_description.value_fn(self.coordinator.processed_data())
 
         # Cancel the currently scheduled event if there is any
         if self._unsub_update:
@@ -175,7 +258,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
         self._unsub_update = event.async_track_point_in_utc_time(
             self.hass,
             self._update_job,
-            utcnow().replace(minute=0, second=0) + timedelta(hours=1),
+            dt.utcnow().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1),
         )
 
 
@@ -201,39 +284,35 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
 
         # We request data for today up until the day after tomorrow.
         # This is to ensure we always request all available data.
+        # New data available after 15:00
+        # today = date.today()
         today = datetime.utcnow().date()
-        tomorrow = today + timedelta(days=1)
-        day_after_tomorrow = today + timedelta(days=2)
+        yesterday = today - timedelta(days=1)
+        tomorrow = today + timedelta(days=2)
+        lasthour = today - timedelta(hours=1)
+        startDate = today + timedelta(hours=-2)
 
-        # Fetch data for today and tomorrow separately,
-        # because the gas prices response only contains data for the first day of the query
-        data_today = await self._run_graphql_query(today, tomorrow)
-        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
-
-        return {
-            'marketPricesElectricity': data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
-            'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-        }
-
-    async def _run_graphql_query(self, start_date, end_date):
         query_data = {
             "query": """
                 query MarketPrices($startDate: Date!, $endDate: Date!) {
                      marketPricesElectricity(startDate: $startDate, endDate: $endDate) { 
-                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice 
+                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice priceMarkup priceIncludingMarkup
                      } 
                      marketPricesGas(startDate: $startDate, endDate: $endDate) { 
-                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice 
+                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice priceMarkup priceIncludingMarkup
                      } 
                 }
             """,
-            "variables": {"startDate": str(start_date), "endDate": str(end_date)},
+            "variables": {"startDate": str(yesterday), "endDate": str(tomorrow)},
             "operationName": "MarketPrices"
         }
         try:
             resp = await self.websession.post(DATA_URL, json=query_data)
 
             data = await resp.json()
+            self._elec_data = data['data']['marketPricesElectricity']
+            self._gas_data = data['data']['marketPricesGas']
+            self._last_update = datetime.now()
             return data['data']
 
         except (asyncio.TimeoutError, aiohttp.ClientError, KeyError) as error:
@@ -242,20 +321,147 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
     def processed_data(self):
         return {
             'elec': self.get_current_hourprices(self.data['marketPricesElectricity']),
-            'gas': self.get_current_hourprices(self.data['marketPricesGas']),
+            'elec_lasthour': self.get_last_hourprice(self.data['marketPricesElectricity']),
+            'elec_nexthour': self.get_next_hourprice(self.data['marketPricesElectricity']),
+            'today_elec_market': self.get_hourprices_market(self.data['marketPricesElectricity']),
+            'today_elec_tax': self.get_hourprices_tax(self.data['marketPricesElectricity']),
             'today_elec': self.get_hourprices(self.data['marketPricesElectricity']),
+            'elec_count': self.get_hours(self.data['marketPricesElectricity']),
+            'tonorrow_elec': self.get_tomorrow_prices(self.data['marketPricesElectricity']),
+            'tomorrow_elec_tax': self.get_tomorrow_prices_tax(self.data['marketPricesElectricity']),
+            'tomorrow_elec_market': self.get_tomorrow_prices_market(self.data['marketPricesElectricity']),
+            'gas': self.get_current_hourprices(self.data['marketPricesGas']),
             'today_gas': self.get_hourprices(self.data['marketPricesGas'])
         }
 
-    def get_current_hourprices(self, hourprices) -> Tuple:
+    def get_last_hourprice(self, hourprices) -> Tuple:
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) < dt.utcnow() - timedelta(hours=1) < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
-    def get_hourprices(self, hourprices) -> List:
-        today_prices = []
+    def get_next_hourprice(self, hourprices) -> Tuple:
         for hour in hourprices:
-            today_prices.append(
-                (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+            if dt.parse_datetime(hour['from']) < dt.utcnow() + timedelta(hours=1) < dt.parse_datetime(hour['till']):
+                return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
+
+    def get_current_hourprices(self, hourprices) -> Tuple:
+        for hour in hourprices:
+            if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
+                return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
+
+    def get_current_hourprices_tax(self, hourprices) -> Tuple:
+        for hour in hourprices:
+            if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
+                return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice']
+
+    def get_hourprices(self, hourprices) -> List:
+        yesterday_prices = []
+        today_prices = []
+        tomorrow_prices = []
+
+        i=0
+        for hour in hourprices:
+            if i < 24:
+                yesterday_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 23 < i < 48:
+                today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            i=i+1
+        if 3 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            return tomorrow_prices
+
+
+    def get_hours(self, hourprices) -> List:
+        elec_hours = []
+
+        for hour in hourprices:
+            elec_hours.append(
+                (hour['from'])
             )
-        return today_prices
+        return elec_hours
+
+    def get_hourprices_market(self, hourprices) -> List:
+        today_prices = []
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 23 < i < 48:
+                today_prices.append(
+                    (hour['marketPrice'])
+                )
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'])
+                )
+            i=i+1
+        if 3 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            return tomorrow_prices
+
+    def get_hourprices_tax(self, hourprices) -> List:
+        today_prices = []
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 23 < i < 48:
+                today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
+                )
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
+                )
+            i=i+1
+        if 3 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            return tomorrow_prices
+
+    def get_tomorrow_prices(self, hourprices) -> List:
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            i=i+1
+        if -1 < datetime.now().hour < 3:
+            return [0]
+        return tomorrow_prices
+
+    def get_tomorrow_prices_tax(self, hourprices) -> List:
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
+                )
+            i=i+1
+        if -1 < datetime.now().hour < 3:
+            return [0]
+        return tomorrow_prices
+
+    def get_tomorrow_prices_market(self, hourprices) -> List:
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'])
+                )
+            i=i+1
+        if -1 < datetime.now().hour < 3:
+            return [0]
+        return tomorrow_prices
