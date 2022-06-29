@@ -16,18 +16,26 @@ Installatie via HACS is mogelijk door deze repository toe te voegen als [custom 
 De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
 
 ```
-sensor:
-  - platform: frank_energie
+  - platform: Frank Energie
     display_options:
-      - gas_market
-      - gas_tax
-      - gas_markup
       - elec_market
       - elec_tax
       - elec_markup
-      - gas_min
-      - gas_max
       - elec_min
       - elec_max
       - elec_avg
-```
+      - elec_lasthour
+      - elec_nexthour
+      - elec_avg_tax
+      - elec_avg_market
+      - elec_hourcount
+      - elec_tomorrow_min
+      - elec_tomorrow_max
+      - elec_tomorrow_avg
+      - elec_tomorrow_avg_tax
+      - elec_tomorrow_avg_market
+      - gas_market
+      - gas_tax
+      - gas_markup
+      - gas_min
+      - gas_max```
