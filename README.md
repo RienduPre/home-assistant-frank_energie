@@ -38,4 +38,5 @@ De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
       - gas_tax
       - gas_markup
       - gas_min
-      - gas_max```
+      - gas_max
+```
