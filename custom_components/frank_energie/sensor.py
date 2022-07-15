@@ -436,7 +436,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 15:
+        if -1 < datetime.now().hour < 16:
             return [0.00]
         return tomorrow_prices
 
@@ -449,7 +449,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 15:
+        if -1 < datetime.now().hour < 16:
             return [0.00]
         return tomorrow_prices
 
@@ -462,6 +462,6 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 15:
+        if -1 < datetime.now().hour < 16:
             return [0.00]
         return tomorrow_prices
