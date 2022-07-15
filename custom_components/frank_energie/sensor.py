@@ -51,8 +51,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_markup",
         name="Current electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: sum(data['elec']),
-        state_class=STATE_CLASS_MEASUREMENT
     ),
     FrankEnergieEntityDescription(
         key="elec_lasthour",
@@ -124,50 +124,50 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_tomorrow_min",
         name="Lowest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: min(data['tonorrow_elec']),
+        value_fn=lambda data: round(min(data['tonorrow_elec']),3),
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_max",
         name="Highest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: max(data['tonorrow_elec']),
+        value_fn=lambda data: round(max(data['tonorrow_elec']),3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg",
         name="Average electricity price today (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         # value_fn=lambda data: round(sum(data['today_elec']) / len(data['today_elec']), 3)
-        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3)
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg24",
         name="Average electricity price today (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3)
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg48",
         name="Average electricity price today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 48, 3)
+        value_fn=lambda data: round(sum(data['today_elec']) / 48, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg72",
         name="Average electricity price yesterday+today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 72, 3)
+        value_fn=lambda data: round(sum(data['today_elec']) / 72, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_tax",
         name="Average electricity price today including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3)
+        value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_market",
         name="Average electricity market price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec_market']) / len(data['today_elec_market']), 3)
+        value_fn=lambda data: round(sum(data['today_elec_market']) / len(data['today_elec_market']), 3),
         # value_fn=lambda data: round(sum(data['today_elec_market']) / 24, 3)
     ),
     FrankEnergieEntityDescription(
@@ -175,25 +175,25 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Number of hours with prices loaded",
         icon = "mdi:numeric-0-box-multiple",
         native_unit_of_measurement="",
-        value_fn=lambda data: len(data['elec_count'])
+        value_fn=lambda data: len(data['elec_count']),
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg",
         name="Average electricity price tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['tonorrow_elec']) / 24, 3)
+        value_fn=lambda data: round(sum(data['tonorrow_elec']) / 24, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg_tax",
         name="Average electricity price tomorrow including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['tomorrow_elec_tax']) / 24, 3)
+        value_fn=lambda data: round(sum(data['tomorrow_elec_tax']) / 24, 3),
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg_market",
         name="Average electricity market price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['tomorrow_elec_market']) / 24, 3)
+        value_fn=lambda data: round(sum(data['tomorrow_elec_market']) / 24, 3),
     ),
 )
 
@@ -436,8 +436,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 3:
-            return [0]
+        if -1 < datetime.now().hour < 15:
+            return [0.00]
         return tomorrow_prices
 
     def get_tomorrow_prices_tax(self, hourprices) -> List:
@@ -450,7 +450,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 )
             i=i+1
         if -1 < datetime.now().hour < 3:
-            return [0]
+            return [0.00]
         return tomorrow_prices
 
     def get_tomorrow_prices_market(self, hourprices) -> List:
@@ -463,5 +463,5 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 )
             i=i+1
         if -1 < datetime.now().hour < 3:
-            return [0]
+            return [0.00]
         return tomorrow_prices
