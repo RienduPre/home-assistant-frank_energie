@@ -353,11 +353,14 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         self.websession = websession
 
         logger = logging.getLogger(__name__)
+        update_interval=timedelta(minutes=60)
+        if datetime.now().hour == 15:
+             update_interval=timedelta(minutes=5)
         super().__init__(
             hass,
             logger,
             name="Frank Energie coordinator",
-            update_interval=timedelta(minutes=15),
+            update_interval=update_interval,
         )
 
     async def _async_update_data(self) -> dict:
@@ -367,7 +370,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         # We request data for today up until the day after tomorrow.
         # This is to ensure we always request all available data.
         # New data available after 15:00
-        # today = date.today()
+
         today = datetime.utcnow().date()
         yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=2)
