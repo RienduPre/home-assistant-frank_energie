@@ -353,14 +353,12 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         self.websession = websession
 
         logger = logging.getLogger(__name__)
-        update_interval=timedelta(minutes=60)
-        if datetime.now().hour == 15:
-             update_interval=timedelta(minutes=5)
+
         super().__init__(
             hass,
             logger,
             name="Frank Energie coordinator",
-            update_interval=update_interval,
+            update_interval=timedelta(minutes=15),
         )
 
     async def _async_update_data(self) -> dict:
