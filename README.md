@@ -26,17 +26,29 @@ De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
       - elec_avg
       - elec_lasthour
       - elec_nexthour
+#      - elec_avg24
+#      - elec_avg48
+#      - elec_avg72
       - elec_avg_tax
       - elec_avg_market
       - elec_hourcount
+      - elec_vat
+      - elec_sourcing
+      - elec_tax_only
+      - elec_tax_only_test
       - elec_tomorrow_min
       - elec_tomorrow_max
       - elec_tomorrow_avg
       - elec_tomorrow_avg_tax
       - elec_tomorrow_avg_market
+      - gas_hourcount
       - gas_market
       - gas_tax
+      - gas_tax_vat
+      - gas_tax_only
+      - gas_sourcing
       - gas_markup
+      - gas_avg
       - gas_min
       - gas_max
 ```
