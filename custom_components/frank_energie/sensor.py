@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from lib2to3.pgen2.token import NUMBER
 import logging
-from typing import Callable, List, Tuple
+from pickle import NONE
+from typing import Callable, List, Tuple, Final
 
 import aiohttp
 import voluptuous as vol
@@ -35,95 +36,190 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt
 
-DOMAIN = "Frank Energie"
-NAME = "Frank Energie"
-VERSION = "2"
-DATA_URL = "https://frank-api.nl/graphql"
+DOMAIN: Final = "Frank Energie"
+NAME: Final = "Frank Energie"
+VERSION: Final = "2"
+DATA_URL: Final = "https://frank-api.nl/graphql"
 # DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
 # DATA_URL = "https://graphcdn.frankenergie.nl"
-ICON = "mdi:currency-eur"
-ATTRIBUTION = "Data provided by Frank Energie"
+ICON: Final = "mdi:currency-eur"
+ATTRIBUTION: Final = "Data provided by Frank Energie"
+MANUFACTURER: Final = "Frank Energie B.V."
 SCAN_INTERVAL = timedelta(minutes=1)
+ATTR_HOUR: Final = "Hour"
 
 @dataclass
 class FrankEnergieEntityDescription(SensorEntityDescription):
     """Describes Frank Energie sensor entity."""
     value_fn: Callable[[dict], StateType] = None
+    attr_fn: Callable[[dict[str, Any]], dict[str, StateType]] = lambda _: {}
 
 SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
         key="elec_markup",
         name="Current electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        device_class=DEVICE_CLASS_MONETARY,
         value_fn=lambda data: sum(data['elec']),
     ),
     FrankEnergieEntityDescription(
         key="elec_lasthour",
         name="Last hour electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: sum(data['elec_lasthour']),
     ),
     FrankEnergieEntityDescription(
         key="elec_nexthour",
         name="Next hour electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: sum(data['elec_nexthour']),
     ),
     FrankEnergieEntityDescription(
         key="elec_market",
         name="Current electricity market price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: data['elec'][0],
     ),
     FrankEnergieEntityDescription(
         key="elec_tax",
         name="Current electricity price including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: data['elec'][0] + data['elec'][1] + data['elec'][2],
     ),
     FrankEnergieEntityDescription(
         key="elec_vat",
         name="Current electricity VAT price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        device_class=DEVICE_CLASS_MONETARY,
         value_fn=lambda data: data['elec'][1],
     ),
     FrankEnergieEntityDescription(
         key="elec_sourcing",
         name="Current electricity sourcing markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        device_class=DEVICE_CLASS_MONETARY,
         value_fn=lambda data: data['elec'][2],
     ),
     FrankEnergieEntityDescription(
         key="elec_tax_only",
         name="Current electricity tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        device_class=DEVICE_CLASS_MONETARY,
         value_fn=lambda data: data['elec'][3],
     ),    
     FrankEnergieEntityDescription(
         key="elec_tax_only_test",
         name="Current electricity tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: data['elec_btw'],
     ),    
+    FrankEnergieEntityDescription(
+        key="elec_min",
+        name="Lowest energy price today",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: min(data['today_elec']),
+        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(min(data['today_elec']))},
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_max",
+        name="Highest energy price today",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: max(data['today_elec']),
+        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(max(data['today_elec']))},
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_min",
+        name="Lowest energy price tomorrow",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(min(data['tonorrow_elec']),3),
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(min(data['tonorrow_elec']))},    
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_max",
+        name="Highest energy price tomorrow",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(max(data['tonorrow_elec']),3),
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(max(data['tonorrow_elec']))},
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg",
+        name="Average electricity price today (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="gas_avg",
+        name="Average gas price today (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: round(sum(data['today_gas']) / len(data['today_gas']), 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg24",
+        name="Average electricity price today (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg48",
+        name="Average electricity price today+tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 48, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg72",
+        name="Average electricity price yesterday+today+tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec']) / 72, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg_tax",
+        name="Average electricity price today including tax",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_avg_market",
+        name="Average electricity market price today",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['today_elec_market']) / len(data['today_elec_market']), 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_hourcount",
+        name="Number of hours with prices loaded",
+        icon = "mdi:numeric-0-box-multiple",
+        value_fn = lambda data: data['elec_count'],
+    ),
+    FrankEnergieEntityDescription(
+        key="gas_hourcount",
+        name="Number of hours for gas with prices loaded",
+        icon = "mdi:numeric-0-box-multiple",
+        value_fn = lambda data: data['gas_count'],
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg",
+        name="Average electricity price tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tonorrow_elec']) / 24, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg_tax",
+        name="Average electricity price tomorrow including tax",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tomorrow_elec_tax']) / 24, 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="elec_tomorrow_avg_market",
+        name="Average electricity market price tomorrow",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
+        value_fn=lambda data: round(sum(data['tomorrow_elec_market']) / 24, 3),
+    ),
     FrankEnergieEntityDescription(
         key="gas_markup",
         name="Current gas price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: sum(data['gas']),
+    ),
+    FrankEnergieEntityDescription(
+        key="gas_market",
+        name="Current gas market price",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: data['gas'][0],
     ),
     FrankEnergieEntityDescription(
         key="gas_tax_vat",
@@ -144,132 +240,24 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data['gas'][3],
     ),
     FrankEnergieEntityDescription(
-        key="gas_market",
-        name="Current gas market price",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: data['gas'][0],
-    ),
-    FrankEnergieEntityDescription(
         key="gas_tax",
         name="Current gas price including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: data['gas'][0] + data['gas'][1],
     ),
     FrankEnergieEntityDescription(
         key="gas_min",
         name="Lowest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: min(data['today_gas']),
+        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(min(data['today_gas']))},
     ),
     FrankEnergieEntityDescription(
         key="gas_max",
         name="Highest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        state_class=STATE_CLASS_MEASUREMENT,
         value_fn=lambda data: max(data['today_gas']),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_min",
-        name="Lowest energy price today",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: min(data['today_elec']),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_max",
-        name="Highest energy price today",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: max(data['today_elec']),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_tomorrow_min",
-        name="Lowest energy price tomorrow",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(min(data['tonorrow_elec']),3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_tomorrow_max",
-        name="Highest energy price tomorrow",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(max(data['tonorrow_elec']),3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg",
-        name="Average electricity price today (All-in)",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg24",
-        name="Average electricity price today (All-in)",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg48",
-        name="Average electricity price today+tomorrow (All-in)",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec']) / 48, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg72",
-        name="Average electricity price yesterday+today+tomorrow (All-in)",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec']) / 72, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg_tax",
-        name="Average electricity price today including tax",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_avg_market",
-        name="Average electricity market price today",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['today_elec_market']) / len(data['today_elec_market']), 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_hourcount",
-        name="Number of hours with prices loaded",
-        icon = "mdi:numeric-0-box-multiple",
-        native_unit_of_measurement = None,
-        state_class = STATE_CLASS_MEASUREMENT,
-        device_class = None,
-        value_fn = lambda data: len(data['elec_count']),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_tomorrow_avg",
-        name="Average electricity price tomorrow (All-in)",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['tonorrow_elec']) / 24, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_tomorrow_avg_tax",
-        name="Average electricity price tomorrow including tax",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['tomorrow_elec_tax']) / 24, 3),
-    ),
-    FrankEnergieEntityDescription(
-        key="elec_tomorrow_avg_market",
-        name="Average electricity market price tomorrow",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        state_class=STATE_CLASS_MEASUREMENT,
-        value_fn=lambda data: round(sum(data['tomorrow_elec_market']) / 24, 3),
+        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(max(data['today_gas']))},
     ),
 )
 
@@ -340,9 +328,9 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
         )
 
     @property
-    def extra_state_attributes(self):
-        """Return entity specific state attributes."""
-        return {"last_updated": datetime.now()}
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes."""
+        return self.entity_description.attr_fn(self.coordinator.processed_data())
 
 class FrankEnergieCoordinator(DataUpdateCoordinator):
     """Get the latest data and update the states."""
@@ -358,7 +346,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             hass,
             logger,
             name="Frank Energie coordinator",
-            update_interval=timedelta(minutes=15),
+            update_interval=timedelta(minutes=5),
         )
 
     async def _async_update_data(self) -> dict:
@@ -371,8 +359,19 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
 
         today = datetime.utcnow().date()
         yesterday = today - timedelta(days=1)
-        tomorrow = today + timedelta(days=2)
+        tomorrow = today + timedelta(days=1)
+        day_after_tomorrow = today + timedelta(days=2)
 
+        data_yesterday = await self._run_graphql_query(yesterday, today)
+        data_today = await self._run_graphql_query(today, tomorrow)
+        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
+
+        return {
+            'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
+            'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
+        }
+
+    async def _run_graphql_query(self, start_date, end_date):
         query_data = {
             "query": """
                 query MarketPrices($startDate: Date!, $endDate: Date!) {
@@ -384,16 +383,13 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                      } 
                 }
             """,
-            "variables": {"startDate": str(yesterday), "endDate": str(tomorrow)},
+            "variables": {"startDate": str(start_date), "endDate": str(end_date)},
             "operationName": "MarketPrices"
         }
         try:
             resp = await self.websession.post(DATA_URL, json=query_data)
 
             data = await resp.json()
-            self._elec_data = data['data']['marketPricesElectricity']
-            self._gas_data = data['data']['marketPricesGas']
-            self._last_update = datetime.now()
             return data['data']
 
         except (asyncio.TimeoutError, aiohttp.ClientError, KeyError) as error:
@@ -408,12 +404,13 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             'today_elec_market': self.get_hourprices_market(self.data['marketPricesElectricity']),
             'today_elec_tax': self.get_hourprices_tax(self.data['marketPricesElectricity']),
             'today_elec': self.get_hourprices(self.data['marketPricesElectricity']),
-            'elec_count': self.get_hours(self.data['marketPricesElectricity']),
+            'elec_count': len(self.data['marketPricesElectricity']),
             'tonorrow_elec': self.get_tomorrow_prices(self.data['marketPricesElectricity']),
             'tomorrow_elec_tax': self.get_tomorrow_prices_tax(self.data['marketPricesElectricity']),
             'tomorrow_elec_market': self.get_tomorrow_prices_market(self.data['marketPricesElectricity']),
+            'gas_count': len(self.data['marketPricesGas']),
             'gas': self.get_current_hourprice(self.data['marketPricesGas']),
-            'today_gas': self.get_hourprices(self.data['marketPricesGas'])
+            'today_gas': self.get_hourprices_gas(self.data['marketPricesGas']),
         }
 
     def get_last_hourprice(self, hourprices) -> Tuple:
@@ -444,6 +441,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
     def get_hourprices(self, hourprices) -> List:
         yesterday_prices = []
         today_prices = []
+        today_hours = []
         tomorrow_prices = []
 
         i=0
@@ -455,6 +453,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             if 23 < i < 48:
                 today_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+                today_hours.append(
+                    (hour['from'])
                 )
             if 47 < i < 72:
                 tomorrow_prices.append(
@@ -468,14 +469,36 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 return tomorrow_prices
         return today_prices
 
-    def get_hours(self, hourprices) -> List:
-        elec_hours = []
+    def get_hourprices_gas(self, hourprices) -> List:
+        yesterday_prices = []
+        today_prices = []
+        today_hours = []
+        tomorrow_prices = []
 
+        i=0
         for hour in hourprices:
-            elec_hours.append(
-                (hour['from'])
-            )
-        return elec_hours
+            if i < 24:
+                today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 23 < i < 48:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+                today_hours.append(
+                    (hour['from'])
+                )
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            i=i+1
+        if 3 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            if tomorrow_prices:
+                return tomorrow_prices
+        return today_prices
 
     def get_hourprices_market(self, hourprices) -> List:
         today_prices = []
