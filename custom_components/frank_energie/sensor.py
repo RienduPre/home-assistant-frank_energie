@@ -47,6 +47,7 @@ ATTRIBUTION: Final = "Data provided by Frank Energie"
 MANUFACTURER: Final = "Frank Energie B.V."
 SCAN_INTERVAL = timedelta(minutes=1)
 ATTR_HOUR: Final = "Hour"
+ATTR_TIME: Final = "Time"
 
 @dataclass
 class FrankEnergieEntityDescription(SensorEntityDescription):
@@ -114,28 +115,28 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Lowest energy price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: min(data['today_elec']),
-        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(min(data['today_elec']))},
+        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(min(data['today_elec'])),ATTR_TIME:datetime.now().replace(hour=data['today_elec'].index(min(data['today_elec'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="elec_max",
         name="Highest energy price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: max(data['today_elec']),
-        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(max(data['today_elec']))},
+        attr_fn=lambda data: {ATTR_HOUR: data['today_elec'].index(max(data['today_elec'])),ATTR_TIME:datetime.now().replace(hour=data['today_elec'].index(max(data['today_elec'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_min",
         name="Lowest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(min(data['tonorrow_elec']),3),
-        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(min(data['tonorrow_elec']))},    
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(min(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(min(data['tonorrow_elec'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_max",
         name="Highest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(max(data['tonorrow_elec']),3),
-        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(max(data['tonorrow_elec']))},
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(max(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(max(data['tonorrow_elec'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="elec_avg",
@@ -241,23 +242,35 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
     ),
     FrankEnergieEntityDescription(
         key="gas_tax",
-        name="Current gas price including tax",
+        name="Current gas price including tax and markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: data['gas'][0] + data['gas'][1],
+        value_fn=lambda data: data['gas'][0] + data['gas'][1] + data['gas'][2],
     ),
     FrankEnergieEntityDescription(
         key="gas_min",
         name="Lowest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: min(data['today_gas']),
-        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(min(data['today_gas']))},
+        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(min(data['today_gas'])),ATTR_TIME:datetime.now().replace(hour=data['today_gas'].index(min(data['today_gas'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="gas_max",
         name="Highest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: max(data['today_gas']),
-        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(max(data['today_gas']))},
+        attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(max(data['today_gas'])),ATTR_TIME:datetime.now().replace(hour=data['today_gas'].index(max(data['today_gas'])), minute=0, second=0, microsecond=0)},
+    ),
+    FrankEnergieEntityDescription(
+        key="gas_tomorrow",
+        name="Gas price after 6AM (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: round(sum(data['tonorrow_gas']) / len(data['tonorrow_gas']), 3),
+    ),
+    FrankEnergieEntityDescription(
+        key="gas_tomorrow_avg",
+        name="Average gas price tomorrow (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: round(sum(data['tonorrow_gas']) / len(data['tonorrow_gas']), 3),
     ),
 )
 
@@ -411,6 +424,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             'gas_count': len(self.data['marketPricesGas']),
             'gas': self.get_current_hourprice(self.data['marketPricesGas']),
             'today_gas': self.get_hourprices_gas(self.data['marketPricesGas']),
+            'tonorrow_gas': self.get_tomorrow_prices_gas(self.data['marketPricesGas']),
         }
 
     def get_last_hourprice(self, hourprices) -> Tuple:
@@ -450,6 +464,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 yesterday_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
+                today_hours.append(
+                    (hour['from'])
+                )
             if 23 < i < 48:
                 today_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
@@ -462,12 +479,13 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
+            self.today_hours = today_hours
         if 3 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
             if tomorrow_prices:
                 return tomorrow_prices
-        return today_prices
+        return today_prices, today_hours
 
     def get_hourprices_gas(self, hourprices) -> List:
         yesterday_prices = []
@@ -488,12 +506,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 today_hours.append(
                     (hour['from'])
                 )
-            if 47 < i < 72:
-                tomorrow_prices.append(
-                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
-                )
             i=i+1
-        if 3 < datetime.now().hour < 24:
+        if -1 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
             if tomorrow_prices:
@@ -559,6 +573,47 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         if -1 < datetime.now().hour < 15:
             return [0.000]
         if len(hourprices) == 48:
+            return [0.000]
+        return tomorrow_prices
+
+    def get_tomorrow_prices_gas(self, hourprices) -> List:
+        today_prices = []
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 23 < i < 30:
+                today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 41 < i < 48:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            i=i+1
+        if -1 < datetime.now().hour < 22:
+            return today_prices
+        if -1 < datetime.now().hour < 15:
+            return tomorrow_prices
+        if len(hourprices) == 24:
+            return [0.000]
+        return tomorrow_prices
+
+    def get_tomorrow_prices_gas_avg(self, hourprices) -> List:
+        tomorrow_prices = []
+        i=0
+        for hour in hourprices:
+            if 42 < i < 48:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 47 < i < 72:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            i=i+1
+        if -1 < datetime.now().hour < 15:
+            return [0.000]
+        if len(hourprices) == 24:
             return [0.000]
         return tomorrow_prices
 
