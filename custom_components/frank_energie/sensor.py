@@ -1,6 +1,12 @@
 """Frank Energie current electricity and gas price information service."""
 from __future__ import annotations
 
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import CONF_NAME
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity import DeviceInfo
+from .const import DEFAULT_NAME, DOMAIN, SENSORS
+from .entity import FrankEnergieEntity
 import asyncio
 from asyncio.windows_events import NULL
 from dataclasses import dataclass
@@ -8,7 +14,7 @@ from datetime import datetime, timedelta
 from lib2to3.pgen2.token import NUMBER
 import logging
 from pickle import NONE
-from typing import Callable, List, Tuple, Final
+from typing import Any, Callable, List, Tuple, Final
 
 import aiohttp
 import voluptuous as vol
@@ -28,6 +34,7 @@ from homeassistant.const import (
     VOLUME_CUBIC_METERS,
 )
 from homeassistant.core import HassJob, HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import event
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
@@ -35,6 +42,8 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt
+from .const import _LOGGER, ATTRIBUTION, CONF_COORDINATOR, DOMAIN, NAME, VERSION, PLATFORMS, SCAN_INTERVAL, FrankEnergieEntityDescription, ICON
+from .coordinator import FrankEnergieCoordinator
 
 DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
@@ -45,7 +54,8 @@ DATA_URL: Final = "https://frank-api.nl/graphql"
 ICON: Final = "mdi:currency-eur"
 ATTRIBUTION: Final = "Data provided by Frank Energie"
 MANUFACTURER: Final = "Frank Energie B.V."
-SCAN_INTERVAL = timedelta(minutes=1)
+SCAN_INTERVAL: Final[float] = timedelta(minutes=1)
+UPDATE_INTERVAL: Final[float] = timedelta(minutes=5)
 ATTR_HOUR: Final = "Hour"
 ATTR_TIME: Final = "Time"
 
@@ -67,12 +77,14 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Last hour electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: sum(data['elec_lasthour']),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_nexthour",
         name="Next hour electricity price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: sum(data['elec_nexthour']),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_market",
@@ -85,30 +97,35 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Current electricity price including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec'][0] + data['elec'][1] + data['elec'][2],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_vat",
         name="Current electricity VAT price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec'][1],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_sourcing",
         name="Current electricity sourcing markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec'][2],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_tax_only",
         name="Current electricity tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec'][3],
+        entity_registry_enabled_default=False,
     ),    
     FrankEnergieEntityDescription(
         key="elec_tax_only_test",
         name="Current electricity tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec_btw'],
+        entity_registry_enabled_default=False,
     ),    
     FrankEnergieEntityDescription(
         key="elec_min",
@@ -129,14 +146,14 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Lowest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(min(data['tonorrow_elec']),3),
-        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(min(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(min(data['tonorrow_elec'])), minute=0, second=0, microsecond=0)},
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(min(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(min(data['tonorrow_elec'])), minute=0, second=0, microsecond=0) + timedelta(days=1)},
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_max",
         name="Highest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(max(data['tonorrow_elec']),3),
-        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(max(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(max(data['tonorrow_elec'])), minute=0, second=0, microsecond=0)},
+        attr_fn=lambda data: {ATTR_HOUR: data['tonorrow_elec'].index(max(data['tonorrow_elec'])),ATTR_TIME:datetime.now().replace(hour=data['tonorrow_elec'].index(max(data['tonorrow_elec'])), minute=0, second=0, microsecond=0) + timedelta(days=1)},
     ),
     FrankEnergieEntityDescription(
         key="elec_avg",
@@ -155,24 +172,28 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price today (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(sum(data['today_elec']) / 24, 3),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg48",
         name="Average electricity price today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(sum(data['today_elec']) / 48, 3),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg72",
         name="Average electricity price yesterday+today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(sum(data['today_elec']) / 72, 3),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_tax",
         name="Average electricity price today including tax",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: round(sum(data['today_elec_tax']) / len(data['today_elec_tax']), 3),
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_market",
@@ -185,12 +206,14 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Number of hours with prices loaded",
         icon = "mdi:numeric-0-box-multiple",
         value_fn = lambda data: data['elec_count'],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_hourcount",
         name="Number of hours for gas with prices loaded",
         icon = "mdi:numeric-0-box-multiple",
         value_fn = lambda data: data['gas_count'],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg",
@@ -217,6 +240,12 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: sum(data['gas']),
     ),
     FrankEnergieEntityDescription(
+        key="gas_markup_before6am",
+        name="Before 6AM gas price (All-in)",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: round(sum(data['today_gas_before6am']) / len(data['today_gas_before6am']), 3),
+    ),
+    FrankEnergieEntityDescription(
         key="gas_market",
         name="Current gas market price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
@@ -227,24 +256,28 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Current gas VAT price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: data['gas'][1],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_sourcing",
         name="Current gas sourcing price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: data['gas'][2],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_tax_only",
         name="Current gas tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: data['gas'][3],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_tax",
         name="Current gas price including tax and markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: data['gas'][0] + data['gas'][1] + data['gas'][2],
+        entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_min",
@@ -293,18 +326,64 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
     websession = async_get_clientsession(hass)
 
-    coordinator = FrankEnergieCoordinator(hass, websession)
+    frank_coordinator = FrankEnergieCoordinator(hass, websession)
 
     entities = [
-        FrankEnergieSensor(coordinator, description)
+        FrankEnergieSensor(frank_coordinator, description)
         for description in SENSORS
-        if description.key in config[CONF_DISPLAY_OPTIONS]
+        #if description.key in config[CONF_DISPLAY_OPTIONS]
     ]
 
-    await coordinator.async_config_entry_first_refresh()
+    await frank_coordinator.async_config_entry_first_refresh()
 
     async_add_entities(entities, True)
 
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up the Frank Energie component from a config entry."""
+
+    """Set up this integration using UI."""
+    if hass.data.get(DOMAIN) is None:
+        hass.data.setdefault(DOMAIN, {})
+
+    # Initialise the coordinator and save it as domain-data
+    web_session_client = async_get_clientsession(hass)
+    frank_coordinator = FrankEnergieCoordinator(hass, web_session_client)
+    #session = async_get_clientsession(hass)
+    #client = FrankEnergieCoordinator(hass, web_session_client)
+
+    device_info = DeviceInfo(
+        entry_type=DeviceEntryType.SERVICE,
+        identifiers={(DOMAIN, entry.entry_id)},
+        manufacturer=NAME,
+        name=NAME,
+        model=VERSION,
+        configuration_url="https://www.frankenergie.nl",
+    )
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        CONF_COORDINATOR: frank_coordinator,
+    }
+
+    # Fetch initial data, so we have data when entities subscribe and set up the platform
+    await frank_coordinator.async_config_entry_first_refresh()
+
+    if not frank_coordinator.last_update_success:
+        raise ConfigEntryNotReady
+
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    #hass.config_entries.async_setup_platforms(entry, PLATFORMS)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = frank_coordinator
+
+    for platform in PLATFORMS:
+        if entry.options.get(platform, True):
+            frank_coordinator.platforms.append(platform)
+            hass.async_add_job(
+                hass.config_entries.async_forward_entry_setup(entry, platform)
+            )
+
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    return True
 
 class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Frank Energie sensor."""
@@ -359,7 +438,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             hass,
             logger,
             name="Frank Energie coordinator",
-            update_interval=timedelta(minutes=5),
+            update_interval=UPDATE_INTERVAL,
         )
 
     async def _async_update_data(self) -> dict:
@@ -424,6 +503,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             'gas_count': len(self.data['marketPricesGas']),
             'gas': self.get_current_hourprice(self.data['marketPricesGas']),
             'today_gas': self.get_hourprices_gas(self.data['marketPricesGas']),
+            'today_gas_before6am': self.get_hourprices_gas_before6am(self.data['marketPricesGas']),
             'tonorrow_gas': self.get_tomorrow_prices_gas(self.data['marketPricesGas']),
         }
 
@@ -485,7 +565,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         if -1 < datetime.now().hour < 3:
             if tomorrow_prices:
                 return tomorrow_prices
-        return today_prices, today_hours
+        return today_prices
 
     def get_hourprices_gas(self, hourprices) -> List:
         yesterday_prices = []
@@ -507,7 +587,36 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['from'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 24:
+        if 5 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            if tomorrow_prices:
+                return tomorrow_prices
+        return today_prices
+
+    def get_hourprices_gas_before6am(self, hourprices) -> List:
+        yesterday_prices = []
+        today_prices = []
+        today_hours = []
+        tomorrow_prices = []
+
+        i=0
+        for hour in hourprices:
+            if i < 6:
+                today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 23 < i < 48:
+                tomorrow_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+                today_hours.append(
+                    (hour['from'])
+                )
+            i=i+1
+        if len(hourprices) == 30:
+            return today_prices
+        if 5 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
             if tomorrow_prices:
@@ -590,12 +699,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 22:
-            return today_prices
-        if -1 < datetime.now().hour < 15:
-            return tomorrow_prices
-        if len(hourprices) == 24:
+        if 5 < datetime.now().hour < 15:
             return [0.000]
+        if len(hourprices) == 30:
+            return today_prices
         return tomorrow_prices
 
     def get_tomorrow_prices_gas_avg(self, hourprices) -> List:
@@ -656,3 +763,26 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         if len(hourprices) == 48:
             return [0.000]
         return tomorrow_prices
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Handle removal of an entry."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    unloaded = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, platform)
+                for platform in PLATFORMS
+                if platform in coordinator.platforms
+            ]
+        )
+    )
+    if unloaded:
+        hass.data[DOMAIN].pop(entry.entry_id)
+
+    return unloaded
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)
