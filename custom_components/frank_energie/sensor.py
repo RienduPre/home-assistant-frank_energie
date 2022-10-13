@@ -54,8 +54,8 @@ DATA_URL: Final = "https://frank-api.nl/graphql"
 ICON: Final = "mdi:currency-eur"
 ATTRIBUTION: Final = "Data provided by Frank Energie"
 MANUFACTURER: Final = "Frank Energie B.V."
-SCAN_INTERVAL: Final[float] = timedelta(minutes=1)
-UPDATE_INTERVAL: Final[float] = timedelta(minutes=5)
+SCAN_INTERVAL: Final = timedelta(minutes=1)
+UPDATE_INTERVAL: Final = timedelta(minutes=15)
 ATTR_HOUR: Final = "Hour"
 ATTR_TIME: Final = "Time"
 
