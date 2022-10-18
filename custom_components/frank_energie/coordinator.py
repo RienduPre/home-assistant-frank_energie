@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import aiohttp
 
@@ -26,7 +26,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             hass,
             logger,
             name="Frank Energie coordinator",
-            update_interval=timedelta(minutes=15),
+            update_interval=timedelta(minutes=60),
         )
 
     async def _async_update_data(self) -> dict:
@@ -41,11 +41,12 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
 
         # Fetch data for today and tomorrow separately,
         # because the gas prices response only contains data for the first day of the query
+        data_yesterday = await self._run_graphql_query(yesterday, today)
         data_today = await self._run_graphql_query(today, tomorrow)
         data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
 
         return {
-            'marketPricesElectricity': data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
+            'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
             'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
         }
 
@@ -86,10 +87,25 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
-    def get_hourprices(self, hourprices) -> List:
-        today_prices = []
+    def get_hourprices(self, hourprices) -> Dict:
+        yesterday_prices = dict()
+        today_prices = dict()
+        tomorrow_prices = dict()
+        i=0
         for hour in hourprices:
-            today_prices.append(
-                (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
-            )
+            # Calling astimezone(None) automagically gets local timezone
+            fromtime = dt.parse_datetime(hour['from']).astimezone()
+            if i < 24:
+               yesterday_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
+            if 23 < i < 48:
+               today_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
+            if 47 < i < 72:
+               tomorrow_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
+            i=i+1
+
+        if 3 < datetime.now().hour < 24:
+            return today_prices
+        if -1 < datetime.now().hour < 3:
+            if tomorrow_prices:
+                return tomorrow_prices
         return today_prices
