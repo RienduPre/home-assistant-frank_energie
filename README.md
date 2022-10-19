@@ -35,12 +35,14 @@ De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
       - elec_vat
       - elec_sourcing
       - elec_tax_only
-      - elec_tax_only_test
+      - elec_upcoming_min
+      - elec_upcoming_max
       - elec_tomorrow_min
       - elec_tomorrow_max
       - elec_tomorrow_avg
       - elec_tomorrow_avg_tax
       - elec_tomorrow_avg_market
+      - elec_upcoming_avg_market
       - gas_hourcount
       - gas_market
       - gas_tax
@@ -48,7 +50,11 @@ De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
       - gas_tax_only
       - gas_sourcing
       - gas_markup
+      - gas_markup_before6am
+      - gas_markup_after6am
       - gas_avg
       - gas_min
       - gas_max
+      - gas_tomorrow_after6am
+      - gas_tomorrow_avg
 ```
