@@ -55,6 +55,5 @@ De plugin en sensoren worden per stuk geconfigureerd in `configuration.yaml`.
       - gas_avg
       - gas_min
       - gas_max
-      - gas_tomorrow_after6am
       - gas_tomorrow_avg
 ```
