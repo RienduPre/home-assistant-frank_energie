@@ -554,61 +554,78 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         }
 
     def get_last_hourprice(self, hourprices) -> Tuple:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
             if dt.parse_datetime(hour['from']) < dt.utcnow() - timedelta(hours=1) < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_next_hourprice(self, hourprices) -> Tuple:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
             if dt.parse_datetime(hour['from']) < dt.utcnow() + timedelta(hours=1) < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_current_hourprice(self, hourprices) -> Tuple:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
             if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_current_btwprice(self, hourprices) -> Tuple:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
             if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['energyTaxPrice']
 
     def get_current_hourprices_tax(self, hourprices) -> Tuple:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
             if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice']
 
     def get_hourprices(self, hourprices) -> Dict:
-        yesterday_prices = dict()
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
+        extrahour_prices = dict()
         today_prices = dict()
         tomorrow_prices = dict()
         i=0
         for hour in hourprices:
             # Calling astimezone(None) automagically gets local timezone
             fromtime = dt.parse_datetime(hour['from']).astimezone()
-            if i < 24:
-               yesterday_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
             if 23 < i < 48:
                today_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
+            if 24 < i < 49:
+               extrahour_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
             if 47 < i < 72:
                tomorrow_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
             i=i+1
-
+        if len(hourprices) == 49:
+            return extrahour_prices
         if 3 < datetime.now().hour < 24:
             return today_prices
-        if -1 < datetime.now().hour < 3:
-            if tomorrow_prices:
-                return tomorrow_prices
+        #if -1 < datetime.now().hour < 3:
+        #    if tomorrow_prices:
+        #        return tomorrow_prices
         return today_prices
 
     def get_hourprices_gas(self, hourprices) -> List:
         today_prices = []
         tomorrow_prices = []
-
+        
         i=0
         for hour in hourprices:
             if i < 24:
                 today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 24 < i < 49:
+                tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             if 23 < i < 48:
@@ -676,6 +693,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         return today_prices
 
     def get_hourprices_market(self, hourprices) -> List:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         today_prices = []
         tomorrow_prices = []
         i=0
@@ -697,6 +716,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         return today_prices
 
     def get_hourprices_tax(self, hourprices) -> List:
+        if len(hourprices) == 24: #fix when no data for today is available
+            return 'unavailable'
         today_prices = []
         tomorrow_prices = []
         i=0
@@ -718,14 +739,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         return today_prices
 
     def get_tomorrow_prices(self, hourprices) -> List:
-        today_prices = []
         tomorrow_prices = []
         i=0
         for hour in hourprices:
-            if 23 < i < 48:
-                today_prices.append(
-                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
-                )
             if 47 < i < 72:
                 tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
@@ -738,14 +754,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         return tomorrow_prices
 
     def get_avg_tomorrow_prices(self, hourprices) -> List:
-        today_prices = []
         tomorrow_prices = []
         i=0
         for hour in hourprices:
-            if 23 < i < 48:
-                today_prices.append(
-                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
-                )
             if 47 < i < 72:
                 tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
