@@ -9,6 +9,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
+import async_timeout
 from typing import Any, Callable, Dict, List, Tuple, Final
 
 import aiohttp
@@ -490,14 +491,18 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         tomorrow = today + timedelta(days=1)
         day_after_tomorrow = today + timedelta(days=2)
 
-        data_yesterday = await self._run_graphql_query(yesterday, today)
-        data_today = await self._run_graphql_query(today, tomorrow)
-        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
+        try:
+            async with async_timeout.timeout(10):
+                data_yesterday = await self._run_graphql_query(yesterday, today)
+                data_today = await self._run_graphql_query(today, tomorrow)
+                data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
 
-        return {
-            'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
-            'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-        }
+                return {
+                    'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
+                    'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
+                }
+        except ApiError as err:
+            raise UpdateFailed(f"Error communicating with API: {err}")
 
     async def _run_graphql_query(self, start_date, end_date):
         query_data = {
@@ -591,8 +596,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
     def get_hourprices(self, hourprices) -> Dict:
         if len(hourprices) == 24: #fix when no data for today is available
             return 'unavailable'
-        extrahour_prices = dict()
         today_prices = dict()
+        extrahour_prices = dict()
+        extrahour_prices2 = dict()
         tomorrow_prices = dict()
         i=0
         for hour in hourprices:
@@ -604,9 +610,13 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                extrahour_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
             if 47 < i < 72:
                tomorrow_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
+            if 48 < i < 73:
+               extrahour_prices2[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
             i=i+1
         if len(hourprices) == 49:
             return extrahour_prices
+        if len(hourprices) == 73:
+            return extrahour_prices2
         if 3 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
@@ -851,9 +861,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 tomorrow_prices[hour['from']] = (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
             i=i+1
         if -1 < datetime.now().hour < 15:
-            return '-'
+            return '—'
         if len(hourprices) == 48:
-            return '-'
+            return '—'
         return min(tomorrow_prices,key=tomorrow_prices.get)
 
     def get_tomorrow_prices_max_time(self, hourprices) -> Dict:
@@ -867,9 +877,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 tomorrow_prices[hour['from']] = (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
             i=i+1
         if -1 < datetime.now().hour < 15:
-            return '-'
+            return '—'
         if len(hourprices) == 48:
-            return '-'
+            return '—'
         return max(tomorrow_prices,key=tomorrow_prices.get)
 
     def get_tomorrow_prices_gas(self, hourprices) -> List:
