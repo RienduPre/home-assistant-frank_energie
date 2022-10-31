@@ -695,6 +695,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
     def get_hourprices_market(self, hourprices) -> List:
         if len(hourprices) == 24: #fix when no data for today is available
             return 'unavailable'
+        extrahour_prices = []
         today_prices = []
         tomorrow_prices = []
         i=0
@@ -703,11 +704,17 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 today_prices.append(
                     (hour['marketPrice'])
                 )
+            if 24 < i < 49:
+                extrahour_prices.append(
+                    (hour['marketPrice'])
+                )
             if 47 < i < 72:
                 tomorrow_prices.append(
                     (hour['marketPrice'])
                 )
             i=i+1
+        if len(hourprices) == 49:
+            return extrahour_prices
         if 3 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
@@ -718,6 +725,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
     def get_hourprices_tax(self, hourprices) -> List:
         if len(hourprices) == 24: #fix when no data for today is available
             return 'unavailable'
+        extrahour_prices = []
         today_prices = []
         tomorrow_prices = []
         i=0
@@ -726,11 +734,17 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 today_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
                 )
+            if 24 < i < 49:
+                extrahour_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
+                )
             if 47 < i < 72:
                 tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'])
                 )
             i=i+1
+        if len(hourprices) == 49:
+            return extrahour_prices
         if 3 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
