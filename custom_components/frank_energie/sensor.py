@@ -609,9 +609,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return extrahour_prices
         if 3 < datetime.now().hour < 24:
             return today_prices
-        #if -1 < datetime.now().hour < 3:
-        #    if tomorrow_prices:
-        #        return tomorrow_prices
+        if -1 < datetime.now().hour < 3:
+            if tomorrow_prices:
+                return tomorrow_prices
         return today_prices
 
     def get_hourprices_gas(self, hourprices) -> List:
