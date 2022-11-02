@@ -1,45 +1,42 @@
 """Frank Energie current electricity and gas price information service."""
 from __future__ import annotations
-from ast import If
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity import DeviceInfo
-from .entity import FrankEnergieEntity
 import asyncio
+import logging
+from ast import If
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import logging
-import async_timeout
-from typing import Any, Callable, Dict, List, Tuple, Final
+from typing import Any, Callable, Dict, Final, List, Tuple
 
 import aiohttp
+import async_timeout
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
-from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA,
-    SensorEntity,
-    SensorDeviceClass,
-    SensorEntityDescription,
-    SensorStateClass,
-)
-from homeassistant.const import (
-    CONF_NAME,
-    CONF_DISPLAY_OPTIONS,
-    CURRENCY_EURO,
-    ENERGY_KILO_WATT_HOUR,
-    VOLUME_CUBIC_METERS,
-)
+from homeassistant.components.sensor import (PLATFORM_SCHEMA,
+                                             SensorDeviceClass, SensorEntity,
+                                             SensorEntityDescription,
+                                             SensorStateClass)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (CONF_DISPLAY_OPTIONS, CONF_NAME,
+                                 CURRENCY_EURO, ENERGY_KILO_WATT_HOUR,
+                                 VOLUME_CUBIC_METERS)
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import event
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.typing import StateType
+from homeassistant.helpers.update_coordinator import (CoordinatorEntity,
+                                                      DataUpdateCoordinator,
+                                                      UpdateFailed)
 from homeassistant.util import dt
-from .const import _LOGGER, ATTRIBUTION, CONF_COORDINATOR, DOMAIN, NAME,DEFAULT_NAME, VERSION, PLATFORMS, SENSORS, SCAN_INTERVAL, FrankEnergieEntityDescription, ICON
+
+from .const import (_LOGGER, ATTRIBUTION, CONF_COORDINATOR, DEFAULT_NAME,
+                    DOMAIN, ICON, NAME, PLATFORMS, SCAN_INTERVAL, SENSORS,
+                    VERSION, FrankEnergieEntityDescription)
 from .coordinator import FrankEnergieCoordinator
+from .entity import FrankEnergieEntity
 
 DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
@@ -58,6 +55,7 @@ UPDATE_INTERVAL: Final[int] = timedelta(minutes=30)
 ATTR_HOUR: Final = "Hour"
 ATTR_TIME: Final = "Time"
 DEFAULT_ROUND = 3
+component_status = "init"
 
 @dataclass
 class FrankEnergieEntityDescription(SensorEntityDescription):
@@ -340,6 +338,12 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: data['tonorrow_gas_after6am'],
     ),
+    FrankEnergieEntityDescription(
+        key="status",
+        name="Status of data and component",
+        native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
+        value_fn=lambda data: data['status'],
+    ),
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -491,18 +495,14 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         tomorrow = today + timedelta(days=1)
         day_after_tomorrow = today + timedelta(days=2)
 
-        try:
-            async with async_timeout.timeout(10):
-                data_yesterday = await self._run_graphql_query(yesterday, today)
-                data_today = await self._run_graphql_query(today, tomorrow)
-                data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
+        data_yesterday = await self._run_graphql_query(yesterday, today)
+        data_today = await self._run_graphql_query(today, tomorrow)
+        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
 
-                return {
-                    'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
-                    'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-                }
-        except ApiError as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
+        return {
+            'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
+            'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
+        }
 
     async def _run_graphql_query(self, start_date, end_date):
         query_data = {
@@ -556,6 +556,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             'tonorrow_gas': self.get_tomorrow_prices_gas(self.data['marketPricesGas']),
             'tonorrow_gas_after6am': self.get_tomorrow_prices_gas_after6am(self.data['marketPricesGas']),
             'gas_market_upcoming_attr': self.get_upcoming_prices_attr(self.data['marketPricesGas']),
+            'status': component_status,
         }
 
     def get_last_hourprice(self, hourprices) -> Tuple:
@@ -595,6 +596,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
 
     def get_hourprices(self, hourprices) -> Dict:
         if len(hourprices) == 24: #fix when no data for today is available
+            component_status = 'No data for today'
             return 'unavailable'
         today_prices = dict()
         extrahour_prices = dict()
