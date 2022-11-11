@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
+import aiohttp
+from aiohttp.hdrs import METH_GET, METH_POST
+import async_timeout
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Final, List, Tuple
 
-import aiohttp
-import async_timeout
-import pytz, dateutil.parser
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.sensor import (PLATFORM_SCHEMA,
@@ -17,16 +18,17 @@ from homeassistant.components.sensor import (PLATFORM_SCHEMA,
                                              SensorEntityDescription,
                                              SensorStateClass)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (CONF_DISPLAY_OPTIONS, CONF_NAME,
+from homeassistant.const import (CONF_DISPLAY_OPTIONS, CONF_NAME, PERCENTAGE,
                                  CURRENCY_EURO, ENERGY_KILO_WATT_HOUR,
-                                 VOLUME_CUBIC_METERS)
+                                 VOLUME_CUBIC_METERS, CONF_FILENAME, CONF_HOST)
 from homeassistant.core import HassJob, HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType, StateType
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import event
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import (CoordinatorEntity,
                                                       DataUpdateCoordinator,
                                                       UpdateFailed)
@@ -34,44 +36,45 @@ from homeassistant.util import dt
 
 from .const import (_LOGGER, ATTRIBUTION, CONF_COORDINATOR, DEFAULT_NAME,
                     DOMAIN, ICON, NAME, PLATFORMS, SCAN_INTERVAL, SENSORS,
-                    VERSION, FrankEnergieEntityDescription)
+                    VERSION, FrankEnergieEntityDescription, DATA_ELECTRICITY,
+                    DATA_GAS, DATA_URL)
 from .coordinator import FrankEnergieCoordinator
 from .entity import FrankEnergieEntity
+from .price_data import PriceData
+
+LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
 DEFAULT_NAME = NAME
-VERSION: Final = "2"
+VERSION: Final = "2022.11.10"
 # DATA_URL: Final = "https://frank-api.nl/graphql"
 DATA_URL = "https://frank-graphql-prod.graphcdn.app"
 # DATA_URL = "https://graphcdn.frankenergie.nl"
+API_TIMEOUT = 10
+API_TIMEZONE: Final = "Europe/Amsterdam"
 ICON: Final = "mdi:currency-eur"
 ATTRIBUTION: Final = "Data provided by Frank Energie"
 MANUFACTURER: Final = "Frank Energie B.V."
 UNIQUE_ID: Final = f"{DOMAIN}_component"
 COMPONENT_TITLE: Final = "Frank Energie"
-SCAN_INTERVAL: Final[int] = timedelta(minutes=1)
-UPDATE_INTERVAL: Final[int] = timedelta(minutes=15)
+SCAN_INTERVAL: Final[timedelta] = timedelta(minutes=1)
+UPDATE_INTERVAL: Final[timedelta] = timedelta(minutes=60)
 ATTR_HOUR: Final = "Hour"
 ATTR_TIME: Final = "Time"
 DEFAULT_ROUND = 3
+DATA_ELECTRICITY = "electricity"
+DATA_GAS = "gas"
 component_status = "init"
-days_loaded = 0
-
-"""
-        datetime.fromisoformat(data['elec_market_upcoming_attr'][0])
-        data['elec_market_upcoming_attr'][1]
-        {ATTR_TIME: min(data['today_elec'],key=data['today_elec'].get)}
-        {datetime.fromisoformat(data['elec_market_upcoming_attr'][0]): data['elec_market_upcoming_attr'][1]}
-        datetime.fromisoformat(data['elec_market_upcoming_attr'][0])
-attr_fn=lambda data: {datetime.fromisoformat(data['elec_market_upcoming_attr'][0]): data['elec_market_upcoming_attr'][1]},
-"""
 
 @dataclass
 class FrankEnergieEntityDescription(SensorEntityDescription):
     """Describes Frank Energie sensor entity."""
     value_fn: Callable[[dict], StateType] = None
     attr_fn: Callable[[dict[str, Any]], dict[str, StateType]] = lambda _: {}
+    value_fn: Callable[[dict[PriceData]], StateType] = None
+    attr_fn: Callable[[dict[PriceData]], dict[str, StateType]] = lambda _: {}
 
 SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
@@ -80,7 +83,6 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: sum(data['elec']),
         attr_fn=lambda data: data['elec_market_upcoming_attr'],
-        force_update=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_lasthour",
@@ -100,35 +102,42 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_market",
         name="Current electricity market price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['elec'][0],
-        force_update=False,
+        value_fn=lambda data: float(data['elec'][1]) / 9 * 100,
     ),
     FrankEnergieEntityDescription(
         key="elec_tax",
         name="Current electricity price including tax and markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
         value_fn=lambda data: data['elec'][0] + data['elec'][1] + data['elec'][2],
-        force_update=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_vat",
         name="Current electricity VAT price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['elec'][1],
+        value_fn=lambda data: float(data['elec'][1]),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_sourcing",
         name="Current electricity sourcing markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['elec'][2],
+        value_fn=lambda data: round(data['elec'][2],DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_tax_only",
         name="Current electricity tax only",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['elec'][3],
+        value_fn=lambda data: round(data['elec'][3],DEFAULT_ROUND),
+        entity_registry_enabled_default=False,
+    ),    
+    FrankEnergieEntityDescription(
+        key="elec_market_percent_tax",
+        name="Electricity market percent tax",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class = None,
+        icon="mdi:percent",
+        value_fn=lambda data: data['elec'][1] / (float(data['elec'][1]) / 9 * 100 / 100),
         entity_registry_enabled_default=False,
     ),    
     FrankEnergieEntityDescription(
@@ -163,14 +172,14 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_tomorrow_min",
         name="Lowest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['tomorrow_elec_min'],
+        value_fn=lambda data: round(data['tomorrow_elec_min'],DEFAULT_ROUND),
         attr_fn=lambda data: {ATTR_TIME: data['tomorrow_elec_min_time']},
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_max",
         name="Highest energy price tomorrow",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: data['tomorrow_elec_max'],
+        value_fn=lambda data: round(data['tomorrow_elec_max'],DEFAULT_ROUND),
         attr_fn=lambda data: {ATTR_TIME: data['tomorrow_elec_max_time']},
     ),
     FrankEnergieEntityDescription(
@@ -190,21 +199,21 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_avg24",
         name="Average electricity price today (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 24, DEFAULT_ROUND),
+        value_fn=lambda data: round(sum(data['today_elec'].values()) / 24, DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg48",
         name="Average electricity price today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 48, DEFAULT_ROUND),
+        value_fn=lambda data: round(sum(data['today_elec'].values()) / 48, DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="elec_avg72",
         name="Average electricity price yesterday+today+tomorrow (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{ENERGY_KILO_WATT_HOUR}",
-        value_fn=lambda data: round(sum(data['today_elec']) / 72, DEFAULT_ROUND),
+        value_fn=lambda data: round(sum(data['today_elec'].values()) / 72, DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
@@ -223,20 +232,18 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
         key="elec_hourcount",
         name="Number of hours with prices loaded",
-        icon = "mdi:numeric-0-box-multiple",
+        icon="mdi:numeric-0-box-multiple",
         device_class = "",
-        value_fn = lambda data: data['elec_count'],
-        attr_fn=lambda data: {"Days loaded": days_loaded},
+        value_fn=lambda data: data['elec_count'],
         entity_registry_enabled_default=False,
         entity_registry_visible_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_hourcount",
         name="Number of hours for gas with prices loaded",
-        icon = "mdi:numeric-0-box-multiple",
-        device_class = "",
-        value_fn = lambda data: data['gas_count'],
-        attr_fn=lambda data: {"Days loaded": days_loaded},
+        icon="mdi:numeric-0-box-multiple",
+        device_class="",
+        value_fn=lambda data: data['gas_count'],
         entity_registry_enabled_default=False,
         entity_registry_visible_default=False,
     ),
@@ -269,7 +276,7 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="gas_markup",
         name="Current gas price (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: sum(data['gas']),
+        value_fn=lambda data: round(sum(data['gas']),DEFAULT_ROUND),
         attr_fn=lambda data: data['gas_market_upcoming_attr'],
     ),
     FrankEnergieEntityDescription(
@@ -296,7 +303,7 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="gas_tax_vat",
         name="Current gas VAT price",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: data['gas'][1],
+        value_fn=lambda data: round(data['gas'][1],DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
@@ -317,21 +324,21 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         key="gas_tax",
         name="Current gas price including tax and markup",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: data['gas'][0] + data['gas'][1] + data['gas'][2],
+        value_fn=lambda data: round(data['gas'][0] + data['gas'][1] + data['gas'][2],DEFAULT_ROUND),
         entity_registry_enabled_default=False,
     ),
     FrankEnergieEntityDescription(
         key="gas_min",
         name="Lowest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: min(data['today_gas']),
+        value_fn=lambda data: round(min(data['today_gas']),DEFAULT_ROUND),
         attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(min(data['today_gas'])),ATTR_TIME:datetime.now().replace(hour=data['today_gas'].index(min(data['today_gas'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
         key="gas_max",
         name="Highest gas price today",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
-        value_fn=lambda data: max(data['today_gas']),
+        value_fn=lambda data: round(max(data['today_gas']),DEFAULT_ROUND),
         attr_fn=lambda data: {ATTR_HOUR: data['today_gas'].index(max(data['today_gas'])),ATTR_TIME:datetime.now().replace(hour=data['today_gas'].index(max(data['today_gas'])), minute=0, second=0, microsecond=0)},
     ),
     FrankEnergieEntityDescription(
@@ -356,49 +363,26 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
     ),
 )
 
-_LOGGER = logging.getLogger(__name__)
-
 OPTION_KEYS = [desc.key for desc in SENSORS]
+
+CONF_ALLOW_UNREACHABLE = "allow_unreachable"
+DEFAULT_UNREACHABLE = False
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_DISPLAY_OPTIONS, default=[]): vol.All(
             cv.ensure_list, [vol.In(OPTION_KEYS)]
         ),
+        vol.Optional(CONF_ALLOW_UNREACHABLE, default=DEFAULT_UNREACHABLE): cv.boolean,
     }
 )
 
-
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None) -> None:
-    """Set up the Frank Energie sensors."""
-    _LOGGER.debug("Setting up Frank")
-
-    websession = async_get_clientsession(hass)
-
-    frank_coordinator = FrankEnergieCoordinator(hass, websession)
-
-    entities = [
-        FrankEnergieSensor(frank_coordinator, description)
-        for description in SENSORS
-        #if description.key in config[CONF_DISPLAY_OPTIONS]
-    ]
-
-    await frank_coordinator.async_config_entry_first_refresh()
-
-    async_add_entities(entities, True)
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_platform(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Set up the Frank Energie component from a config entry."""
-
-    """Set up this integration using UI."""
-    if hass.data.get(DOMAIN) is None:
-        hass.data.setdefault(DOMAIN, {})
 
     # Initialise the coordinator and save it as domain-data
     web_session_client = async_get_clientsession(hass)
     frank_coordinator = FrankEnergieCoordinator(hass, web_session_client)
-    #session = async_get_clientsession(hass)
-    #client = FrankEnergieCoordinator(hass, web_session_client)
 
     device_info = DeviceInfo(
         entry_type=DeviceEntryType.SERVICE,
@@ -409,19 +393,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         configuration_url="https://www.frankenergie.nl",
     )
 
+    """Set up this integration using UI."""
+    if hass.data.get(DOMAIN) is None:
+        #hass.data.setdefault(DOMAIN, {})[entry.entry_id] = frank_coordinator
+        hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         CONF_COORDINATOR: frank_coordinator,
     }
-
-    # Fetch initial data, so we have data when entities subscribe and set up the platform
-    await frank_coordinator.async_config_entry_first_refresh()
-
-    if not frank_coordinator.last_update_success:
-        raise ConfigEntryNotReady
-
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-    #hass.config_entries.async_setup_platforms(entry, PLATFORMS)
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = frank_coordinator
 
     for platform in PLATFORMS:
         if entry.options.get(platform, True):
@@ -430,9 +408,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.config_entries.async_forward_entry_setup(entry, platform)
             )
 
+    # Fetch initial data, so we have data when entities subscribe and set up the platform
+    await frank_coordinator.async_config_entry_first_refresh()
+
+    if not frank_coordinator.last_update_success:
+        raise ConfigEntryNotReady
+
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigType,
+    async_add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None
+) -> None:
+    """Set up the Frank Energie sensors."""
+    _LOGGER.debug("Setting up Frank")
+
+    web_session_client = async_get_clientsession(hass)
+    frank_coordinator = FrankEnergieCoordinator(hass, web_session_client)
+    #frank_coordinator = hass.data[DOMAIN][config_entry.entry_id][CONF_COORDINATOR]
+    await frank_coordinator.async_refresh()
+
+    if not frank_coordinator.last_update_success:
+        raise ConfigEntryNotReady
+
+    entities = [
+        FrankEnergieSensor(hass, frank_coordinator, description)
+        for description in SENSORS
+        #if description.key in config[CONF_DISPLAY_OPTIONS]
+    ]
+
+    await frank_coordinator.async_config_entry_first_refresh()
+
+    async_add_entities(entities, True)
 
 class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Frank Energie sensor."""
@@ -445,25 +456,32 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     _attr_attribution = ATTRIBUTION
     _attr_icon = ICON
 
-    def __init__(self, coordinator: FrankEnergieCoordinator, description: FrankEnergieEntityDescription) -> None:
+    def __init__(self, hass: HomeAssistant, coordinator: FrankEnergieCoordinator, description: FrankEnergieEntityDescription) -> None:
         """Initialize the sensor."""
+        self.hass = hass
         self.entity_description: FrankEnergieEntityDescription = description
+        self._attr_unique_id = f"{DOMAIN}.{description.key}"
 
         # Exceptions for non default sensors.
         if not f"{description.device_class}":
-            self._attr_device_class = f"{description.device_class}"
+            self._attr_device_class = f"{description.icon}"
         if not f"{description.icon}":
             self._attr_icon = f"{description.icon}"
 
-        self._attr_unique_id = f"{DOMAIN}.{description.key}"
         self._update_job = HassJob(self.async_schedule_update_ha_state)
+        #self._update_job = HassJob(self._handle_scheduled_update)
         self._unsub_update = None
 
         super().__init__(coordinator)
 
     async def async_update(self) -> None:
         """Get the latest data and updates the states."""
-        self._attr_native_value = self.entity_description.value_fn(self.coordinator.processed_data())
+        try:
+            self._attr_native_value = self.entity_description.value_fn(self.coordinator.processed_data())
+        except (TypeError, IndexError, ValueError):
+            # No data available
+            self._attr_native_value = "unavailable"
+            #self._attr_native_value = None
 
         # Cancel the currently scheduled event if there is any
         if self._unsub_update:
@@ -471,11 +489,21 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
             self._unsub_update = None
 
         # Schedule the next update at exactly the next whole hour sharp
+        #dt.utcnow().replace(minute=0, second=0) + timedelta(hours=1),
         self._unsub_update = event.async_track_point_in_utc_time(
             self.hass,
             self._update_job,
             dt.utcnow().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1),
         )
+
+    async def _handle_scheduled_update(self, _):
+        """ Handle a scheduled update. """
+        # Only handle the scheduled update for entities which have a reference to hass,
+        # which disabled sensors don't have.
+        if self.hass is None:
+            return
+
+        self.async_schedule_update_ha_state(True)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -512,31 +540,54 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         tomorrow = today + timedelta(days=1)
         day_after_tomorrow = today + timedelta(days=2)
 
-        data_yesterday = await self._run_graphql_query(yesterday, today)
-        data_today = await self._run_graphql_query(today, tomorrow)
-        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
-        if data_yesterday is not None:
-            if data_tomorrow is not None:
-                days_loaded = 3
-                return {
-                    'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
-                    'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-                }
+        try:
+            data_yesterday = await self._run_graphql_query(yesterday, today)
+            data_today = await self._run_graphql_query(today, tomorrow)
+            data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
+        except UpdateFailed as err:
+            # Check if we still have data to work with, if so, return this data. Still log the error as warning
+            if self.data[DATA_ELECTRICITY].get_future_prices() and self.data[DATA_GAS].get_future_prices():
+                LOGGER.warning(str(err))
+                return self.data
+            # Re-raise the error if there's no data from future left
+            raise err
 
-        if data_tomorrow is not None:
-            days_loaded = 2
+        if data_yesterday and data_tomorrow:
+            return {
+                'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
+                'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
+                DATA_ELECTRICITY: PriceData(
+                    data_yesterday.get('marketPricesElectricity', []) + data_today.get('marketPricesElectricity', []) + data_tomorrow.get('marketPricesElectricity', [])
+                ),
+                DATA_GAS: PriceData(
+                    data_yesterday.get('marketPricesElectricity', []) + data_today.get('marketPricesGas', []) + data_tomorrow.get('marketPricesGas', [])
+                ),
+            }
+
+        if data_tomorrow:
             return {
                 'marketPricesElectricity': data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
                 'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-                }
+                DATA_ELECTRICITY: PriceData(
+                    data_today.get('marketPricesElectricity', []) + data_tomorrow.get('marketPricesElectricity', [])
+                ),
+                DATA_GAS: PriceData(
+                    data_today.get('marketPricesGas', []) + data_tomorrow.get('marketPricesGas', [])
+                ),
+            }
 
-        days_loaded = 1
         return {
             'marketPricesElectricity': data_today['marketPricesElectricity'],
             'marketPricesGas': data_today['marketPricesGas'],
-        }    
+            DATA_ELECTRICITY: PriceData(
+                data_today.get('marketPricesElectricity', [])
+            ),
+            DATA_GAS: PriceData(
+                data_today.get('marketPricesGas', [])
+            ),
+        }  
 
-    async def _run_graphql_query(self, start_date, end_date):
+    async def _run_graphql_query(self, start_date, end_date) -> dict:
         query_data = {
             "query": """
                 query MarketPrices($startDate: Date!, $endDate: Date!) {
@@ -552,12 +603,38 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             "operationName": "MarketPrices"
         }
         try:
-            resp = await self.websession.post(DATA_URL, json=query_data)
+            url = DATA_URL
+            response = await self.websession.post(DATA_URL, json=query_data)
+            data = await response.json()
+            return data['data'] if data['data'] else {}
 
-            data = await resp.json()
-            return data['data']
+        except (asyncio.TimeoutError) as exception:
+            _LOGGER.error(
+                "Timeout error fetching information from %s - %s",
+                url,
+                exception,
+            )
 
-        except (asyncio.TimeoutError, aiohttp.ClientError, KeyError) as error:
+        except (KeyError, TypeError) as exception:
+            _LOGGER.error(
+                "Error parsing information from %s - %s",
+                url,
+                exception,
+            )
+        except (aiohttp.ClientError, socket.gaierror) as exception:
+            _LOGGER.error(
+                "Error fetching information from %s - %s",
+                url,
+                exception,
+            )
+
+        except FrankEnergieApiException as exception:
+            _LOGGER.error("Error in API! - %s", exception)
+            # Raise to pass on to the user.
+            raise exception
+
+        except Exception as exception:  # pylint: disable=broad-except
+            _LOGGER.error("Something really wrong happened! - %s", exception)
             raise UpdateFailed(f"Fetching energy data for period {start_date} - {end_date} failed: {error}") from error
 
     def processed_data(self):
@@ -592,44 +669,43 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         }
 
     def get_last_hourprice(self, hourprices) -> Tuple:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) < dt.utcnow() - timedelta(hours=1) < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) <= dt.utcnow() - timedelta(hours=1) < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_next_hourprice(self, hourprices) -> Tuple:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) < dt.utcnow() + timedelta(hours=1) < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) <= dt.utcnow() + timedelta(hours=1) < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_current_hourprice(self, hourprices) -> Tuple:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
 
     def get_current_btwprice(self, hourprices) -> Tuple:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['energyTaxPrice']
 
     def get_current_hourprices_tax(self, hourprices) -> Tuple:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         for hour in hourprices:
-            if dt.parse_datetime(hour['from']) < dt.utcnow() < dt.parse_datetime(hour['till']):
+            if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
                 return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice']
 
     def get_hourprices(self, hourprices) -> Dict:
-        #if len(hourprices) == 24: #fix when no data for today is available
-        #    component_status = 'No data for today'
-        #    return 'unavailable'
+        if len(hourprices) == 0: #fix when no data for today is available
+            return 'unavailable'
         today_prices = dict()
         today_prices1 = dict()
         extrahour_prices = dict()
@@ -671,10 +747,6 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         for hour in hourprices:
             if i < 24:
                 today_prices.append(
-                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
-                )
-            if 24 < i < 49:
-                tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             if 23 < i < 48:
@@ -826,8 +898,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return 'unavailable'
+        if len(hourprices) is 72:
+            return tomorrow_prices
         return tomorrow_prices
 
     def get_avg_tomorrow_prices(self, hourprices) -> List:
@@ -845,7 +919,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return 'unavailable'
         if len(hourprices) == 48:
             return 'unavailable'
-        return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        if len(hourprices) is 72:
+            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        if tomorrow_prices:
+            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
 
     def get_min_tomorrow_prices(self, hourprices) -> List:
         today_prices = []
@@ -861,11 +938,14 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
+        if len(hourprices) is 72:
+            round(min(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
         if len(hourprices) == 48:
             return 'unavailable'
-        return round(min(tomorrow_prices), DEFAULT_ROUND)
+        if tomorrow_prices:
+            return round(min(tomorrow_prices), DEFAULT_ROUND)
 
     def get_max_tomorrow_prices(self, hourprices) -> List:
         today_prices = []
@@ -881,11 +961,14 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
+        if len(hourprices) is 72:
+            round(max(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return 'unavailable'
-        return round(max(tomorrow_prices), DEFAULT_ROUND)
+        if tomorrow_prices:
+            return round(max(tomorrow_prices), DEFAULT_ROUND)
 
     def get_tomorrow_prices_time(self, hourprices) -> Dict:
         today_prices = dict()
@@ -899,8 +982,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return 'unavailable'
+        if len(hourprices) is 72:
+            return tomorrow_prices
         return tomorrow_prices
 
     def get_tomorrow_prices_min_time(self, hourprices) -> Dict:
@@ -915,9 +1000,12 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return '—'
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return '—'
-        return min(tomorrow_prices,key=tomorrow_prices.get)
+        if len(hourprices) is 72:
+            return min(tomorrow_prices,key=tomorrow_prices.get)
+        if tomorrow_prices:
+            return min(tomorrow_prices,key=tomorrow_prices.get)
 
     def get_tomorrow_prices_max_time(self, hourprices) -> Dict:
         today_prices = dict()
@@ -933,7 +1021,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return '—'
         if len(hourprices) == 48:
             return '—'
-        return max(tomorrow_prices,key=tomorrow_prices.get)
+        if len(hourprices) is 72:
+            max(tomorrow_prices,key=tomorrow_prices.get)
+        if tomorrow_prices:
+            return max(tomorrow_prices,key=tomorrow_prices.get)
 
     def get_tomorrow_prices_gas(self, hourprices) -> List:
         today_prices = []
@@ -1091,10 +1182,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             utcfromtime = dt.parse_datetime(hour['from'][:-5])
             if utcfromtime > now:
                 utctime = dt.parse_datetime(hour['from'])
-                #utctime = dateutil.parser.parse(hour['from'])
                 # Convert to local time for display in attribute
-                localtime = utctime.astimezone(pytz.timezone("Europe/Amsterdam"))
-                #upcoming_prices[datetime.fromisoformat(hour['from'][:-5])] = (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                localtime = dt.as_local(utctime)
                 upcoming_prices[localtime] = (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
         return upcoming_prices
 
@@ -1120,3 +1209,6 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)
+
+class FrankEnergieApiException(Exception):
+    """Frank Energie API Exception class"""
