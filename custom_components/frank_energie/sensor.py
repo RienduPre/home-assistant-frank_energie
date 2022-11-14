@@ -37,7 +37,7 @@ from homeassistant.util import dt
 from .const import (_LOGGER, ATTRIBUTION, CONF_COORDINATOR, DEFAULT_NAME,
                     DOMAIN, ICON, NAME, PLATFORMS, SCAN_INTERVAL, SENSORS,
                     VERSION, FrankEnergieEntityDescription, DATA_ELECTRICITY,
-                    DATA_GAS, DATA_URL)
+                    DATA_GAS, DATA_URL, DEFAULT_ROUND)
 from .coordinator import FrankEnergieCoordinator
 from .entity import FrankEnergieEntity
 from .price_data import PriceData
@@ -48,7 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
 DEFAULT_NAME = NAME
-VERSION: Final = "2022.11.10"
+VERSION: Final = "2022.11.15"
 # DATA_URL: Final = "https://frank-api.nl/graphql"
 DATA_URL = "https://frank-graphql-prod.graphcdn.app"
 # DATA_URL = "https://graphcdn.frankenergie.nl"
@@ -936,10 +936,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if len(hourprices) is 72:
-            return round(min(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
+        if len(hourprices) is 72:
+            return round(min(tomorrow_prices), DEFAULT_ROUND)
         if len(hourprices) == 48:
             return 'unavailable'
         if tomorrow_prices:
@@ -959,10 +959,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if len(hourprices) is 72:
-            return round(max(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
+        if len(hourprices) is 72:
+            return round(max(tomorrow_prices), DEFAULT_ROUND)
         if len(hourprices) is 48:
             return 'unavailable'
         if tomorrow_prices:
