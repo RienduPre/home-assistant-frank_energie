@@ -913,9 +913,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 3:
-            return 'unavailable'
-        if 2 < datetime.now().hour < 15:
+        if -1 < datetime.now().hour < 15:
             return 'unavailable'
         if len(hourprices) == 48:
             return 'unavailable'
@@ -939,7 +937,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 )
             i=i+1
         if len(hourprices) is 72:
-            round(min(tomorrow_prices), DEFAULT_ROUND)
+            return round(min(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
         if len(hourprices) == 48:
@@ -962,7 +960,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 )
             i=i+1
         if len(hourprices) is 72:
-            round(max(tomorrow_prices), DEFAULT_ROUND)
+            return round(max(tomorrow_prices), DEFAULT_ROUND)
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
         if len(hourprices) is 48:
@@ -1019,10 +1017,10 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return '—'
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return '—'
         if len(hourprices) is 72:
-            max(tomorrow_prices,key=tomorrow_prices.get)
+            return max(tomorrow_prices,key=tomorrow_prices.get)
         if tomorrow_prices:
             return max(tomorrow_prices,key=tomorrow_prices.get)
 
@@ -1085,13 +1083,13 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         #if -1 < datetime.now().hour < 6:
         #    return "unavailable"
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
         if 5 < datetime.now().hour < 15:
             return "unavailable"
-        if 21 < datetime.now().hour < 24:
-            return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
-        if len(hourprices) == 30:
+        #if 21 < datetime.now().hour < 24:
+            #return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
+        if len(hourprices) is 30:
             return "unavailable"
         return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
 
@@ -1140,14 +1138,14 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return "unavailable"
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return "unavailable"
         return round(sum(tomorrow_prices) / 24, DEFAULT_ROUND)
 
     def get_tomorrow_prices_market(self, hourprices) -> List:
         if -1 < datetime.now().hour < 15:
             return "unavailable"
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return "unavailable"
 
         today_prices = []
@@ -1201,7 +1199,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id)
-
     return unloaded
 
 
