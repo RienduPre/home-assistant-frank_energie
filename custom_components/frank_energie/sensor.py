@@ -49,9 +49,10 @@ DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
 DEFAULT_NAME = NAME
 VERSION: Final = "2022.11.15"
-# DATA_URL: Final = "https://frank-api.nl/graphql"
 DATA_URL = "https://frank-graphql-prod.graphcdn.app"
-# DATA_URL = "https://graphcdn.frankenergie.nl"
+DATA_URL = "https://graphcdn.frankenergie.nl"
+DATA_URL = "https://frank-api.nl/graphql"
+#DATA_URL : Final = "https://frank-api.nl/graphql","https://frank-graphql-prod.graphcdn.app","https://graphcdn.frankenergie.nl"
 API_TIMEOUT = 10
 API_TIMEZONE: Final = "Europe/Amsterdam"
 ICON: Final = "mdi:currency-eur"
@@ -60,7 +61,8 @@ MANUFACTURER: Final = "Frank Energie B.V."
 UNIQUE_ID: Final = f"{DOMAIN}_component"
 COMPONENT_TITLE: Final = "Frank Energie"
 SCAN_INTERVAL: Final[timedelta] = timedelta(minutes=1)
-UPDATE_INTERVAL: Final[timedelta] = timedelta(minutes=60)
+#UPDATE_INTERVAL: Final[timedelta] = timedelta(minutes=60)
+UPDATE_INTERVAL = timedelta(minutes=60)
 ATTR_HOUR: Final = "Hour"
 ATTR_TIME: Final = "Time"
 DEFAULT_ROUND = 3
@@ -194,6 +196,7 @@ SENSORS: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average gas price today (All-in)",
         native_unit_of_measurement=f"{CURRENCY_EURO}/{VOLUME_CUBIC_METERS}",
         value_fn=lambda data: round(sum(data['today_gas']) / len(data['today_gas']), DEFAULT_ROUND),
+        attr_fn=lambda data: {"Number of hours": len(data['today_gas'])},
     ),
     FrankEnergieEntityDescription(
         key="elec_avg24",
@@ -509,6 +512,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         return self.entity_description.attr_fn(self.coordinator.processed_data())
+        return self.entity_description.attr_fn(self.coordinator.data)
 
 class FrankEnergieCoordinator(DataUpdateCoordinator):
     """Get the latest data and update the states."""
@@ -754,6 +758,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
+        if len(hourprices) == 48:
+            return tomorrow_prices
         if 5 < datetime.now().hour < 24:
             return today_prices
         if -1 < datetime.now().hour < 3:
@@ -896,13 +902,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if -1 < datetime.now().hour < 15:
-            return 'unavailable'
-        if len(hourprices) is 48:
-            return 'unavailable'
-        if len(hourprices) is 72:
+        if len(hourprices) > 71:
             return tomorrow_prices
-        return tomorrow_prices
+        return 'unavailable'
 
     def get_avg_tomorrow_prices(self, hourprices) -> List:
         tomorrow_prices = []
@@ -915,12 +917,15 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             i=i+1
         if -1 < datetime.now().hour < 15:
             return 'unavailable'
-        if len(hourprices) == 48:
-            return 'unavailable'
-        if len(hourprices) is 72:
-            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
-        if tomorrow_prices:
-            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        if len(hourprices) is 24:
+            UPDATE_INTERVAL = timedelta(minutes=5)
+        if len(hourprices) > 71:
+            UPDATE_INTERVAL = timedelta(minutes=60)
+            if tomorrow_prices:
+                return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        #if tomorrow_prices:
+        #    return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        return 'unavailable'
 
     def get_min_tomorrow_prices(self, hourprices) -> List:
         today_prices = []
@@ -940,7 +945,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return 'unavailable'
         if len(hourprices) is 72:
             return round(min(tomorrow_prices), DEFAULT_ROUND)
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return 'unavailable'
         if tomorrow_prices:
             return round(min(tomorrow_prices), DEFAULT_ROUND)
@@ -1028,6 +1033,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         today_prices = []
         today_prices2 = []
         tomorrow_prices = []
+        tomorrow_prices2 = []
         tomorrow_before6am_prices = []
         i=0
         for hour in hourprices:
@@ -1043,11 +1049,17 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 tomorrow_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
+            if 29 < i < 48:
+                tomorrow_prices2.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
             if 41 < i < 48:
                 tomorrow_before6am_prices.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
+        if len(hourprices) == 48:
+            return tomorrow_prices2
         if len(hourprices) == 24:
             return today_prices2
         if -1 < datetime.now().hour < 3:
@@ -1066,10 +1078,15 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         today_prices = []
         tomorrow_prices = []
         tomorrow_after6am_prices = []
+        tomorrow_after6am_prices2 = []
         i=0
         for hour in hourprices:
             if 23 < i < 30:
                 today_prices.append(
+                    (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                )
+            if 11 < i < 30:
+                tomorrow_after6am_prices2.append(
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             if 23 < i < 48:
@@ -1081,16 +1098,15 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        #if -1 < datetime.now().hour < 6:
-        #    return "unavailable"
+        if -1 < datetime.now().hour < 22:
+            return "unavailable"
         if len(hourprices) is 48:
             return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
-        if 5 < datetime.now().hour < 15:
-            return "unavailable"
         #if 21 < datetime.now().hour < 24:
-            #return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
+        #    return "unavailable"
+            #round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
         if len(hourprices) is 30:
-            return "unavailable"
+            return round(sum(tomorrow_after6am_prices2) / len(tomorrow_after6am_prices2), DEFAULT_ROUND)
         return round(sum(tomorrow_after6am_prices) / len(tomorrow_after6am_prices), DEFAULT_ROUND)
 
     def get_tomorrow_prices_gas_avg_not_used(self, hourprices) -> List:
@@ -1140,7 +1156,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return "unavailable"
         if len(hourprices) is 48:
             return "unavailable"
-        return round(sum(tomorrow_prices) / 24, DEFAULT_ROUND)
+        return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
 
     def get_tomorrow_prices_market(self, hourprices) -> List:
         if -1 < datetime.now().hour < 15:
@@ -1161,7 +1177,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'])
                 )
             i=i+1
-        return round(sum(tomorrow_prices) / 24, DEFAULT_ROUND)
+        return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
 
     def get_upcoming_prices(self, hourprices) -> Dict:
         upcoming_prices = dict()
@@ -1182,7 +1198,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                 utctime = dt.parse_datetime(hour['from'])
                 # Convert to local time for display in attribute
                 localtime = dt.as_local(utctime)
-                upcoming_prices[localtime] = (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
+                upcoming_prices[localtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
         return upcoming_prices
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
