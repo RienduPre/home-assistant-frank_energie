@@ -48,7 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN: Final = "Frank Energie"
 NAME: Final = "Frank Energie"
 DEFAULT_NAME = NAME
-VERSION: Final = "2022.11.15"
+VERSION: Final = "2022.11.25"
 DATA_URL = "https://frank-graphql-prod.graphcdn.app"
 DATA_URL = "https://graphcdn.frankenergie.nl"
 DATA_URL = "https://frank-api.nl/graphql"
@@ -1058,9 +1058,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice'])
                 )
             i=i+1
-        if len(hourprices) == 48:
+        if len(hourprices) is 48:
             return tomorrow_prices2
-        if len(hourprices) == 24:
+        if len(hourprices) is 24:
             return today_prices2
         if -1 < datetime.now().hour < 3:
             return today_prices
@@ -1068,7 +1068,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return today_prices
         if 15 < datetime.now().hour < 24:
             return tomorrow_prices
-        if len(hourprices) == 30:
+        if len(hourprices) is 30:
             return today_prices
         return tomorrow_prices
 
@@ -1156,7 +1156,9 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
             return "unavailable"
         if len(hourprices) is 48:
             return "unavailable"
-        return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        if tomorrow_prices:
+            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        return "unavailable"
 
     def get_tomorrow_prices_market(self, hourprices) -> List:
         if -1 < datetime.now().hour < 15:
@@ -1177,7 +1179,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
                     (hour['marketPrice'])
                 )
             i=i+1
-        return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
+        if tomorrow_prices:
+            return round(sum(tomorrow_prices) / len(tomorrow_prices), DEFAULT_ROUND)
 
     def get_upcoming_prices(self, hourprices) -> Dict:
         upcoming_prices = dict()
