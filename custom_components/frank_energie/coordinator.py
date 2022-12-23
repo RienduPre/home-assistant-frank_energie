@@ -36,6 +36,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator):
         # We request data for today up until the day after tomorrow.
         # This is to ensure we always request all available data.
         today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=1)
         day_after_tomorrow = today + timedelta(days=2)
 
