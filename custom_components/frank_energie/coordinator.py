@@ -1,112 +1,190 @@
-from __future__ import annotations
+""" Coordinator implementation for Frank Energie integration.
+    Fetching the latest data from Frank Energie and updating the states."""
+# coordinator.py
 
 import asyncio
-from datetime import datetime, timedelta
-import logging
-from typing import Dict, List, Tuple
+from datetime import date, datetime, time, timedelta
+from typing import Callable, Optional, TypedDict
 
 import aiohttp
-
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_ACCESS_TOKEN, CONF_TOKEN
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt
-from .const import DATA_URL
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import (DataUpdateCoordinator,
+                                                      UpdateFailed)
+from python_frank_energie import FrankEnergie
+from python_frank_energie.exceptions import AuthException, RequestException
+from python_frank_energie.models import (Invoices, MarketPrices, MonthSummary,
+                                         PriceData, User)
+
+from .api import FrankEnergieAPI
+from .const import (_LOGGER, DATA_ELECTRICITY, DATA_GAS, DATA_INVOICES,
+                    DATA_MONTH_SUMMARY, DATA_USER)
+
+
+class FrankEnergieData(TypedDict):
+    """ Represents data fetched from Frank Energie API. """
+    DATA_ELECTRICITY: PriceData
+    DATA_GAS: PriceData
+    DATA_MONTH_SUMMARY: Optional[MonthSummary]
+    DATA_INVOICES: Optional[Invoices]
+    DATA_USER: Optional[User]
 
 
 class FrankEnergieCoordinator(DataUpdateCoordinator):
-    """Get the latest data and update the states."""
+    """ Get the latest data and update the states. """
 
-    def __init__(self, hass: HomeAssistant, websession) -> None:
+    api: FrankEnergie
+
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, api: FrankEnergie
+    ) -> None:
         """Initialize the data object."""
         self.hass = hass
-        self.websession = websession
+        self.entry = entry
+        self.api = api
 
-        logger = logging.getLogger(__name__)
         super().__init__(
             hass,
-            logger,
+            _LOGGER,
             name="Frank Energie coordinator",
             update_interval=timedelta(minutes=60),
         )
 
-    async def _async_update_data(self) -> dict:
-        """Get the latest data from Frank Energie"""
-        self.logger.debug("Fetching Frank Energie data")
+    async def _async_update_data(self) -> FrankEnergieData:
+        """Get the latest data from Frank Energie."""
 
         # We request data for today up until the day after tomorrow.
         # This is to ensure we always request all available data.
         today = datetime.utcnow().date()
-        yesterday = today - timedelta(days=1)
         tomorrow = today + timedelta(days=1)
-        day_after_tomorrow = today + timedelta(days=2)
+        day_after_tomorrow = tomorrow + timedelta(days=1)
+        prices_tomorrow = None
 
         # Fetch data for today and tomorrow separately,
         # because the gas prices response only contains data for the first day of the query
-        data_yesterday = await self._run_graphql_query(yesterday, today)
-        data_today = await self._run_graphql_query(today, tomorrow)
-        data_tomorrow = await self._run_graphql_query(tomorrow, day_after_tomorrow)
-
-        return {
-            'marketPricesElectricity': data_yesterday['marketPricesElectricity'] + data_today['marketPricesElectricity'] + data_tomorrow['marketPricesElectricity'],
-            'marketPricesGas': data_today['marketPricesGas'] + data_tomorrow['marketPricesGas'],
-        }
-
-    async def _run_graphql_query(self, start_date, end_date):
-        query_data = {
-            "query": """
-                query MarketPrices($startDate: Date!, $endDate: Date!) {
-                     marketPricesElectricity(startDate: $startDate, endDate: $endDate) { 
-                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice 
-                     } 
-                     marketPricesGas(startDate: $startDate, endDate: $endDate) { 
-                        from till marketPrice marketPriceTax sourcingMarkupPrice energyTaxPrice 
-                     } 
-                }
-            """,
-            "variables": {"startDate": str(start_date), "endDate": str(end_date)},
-            "operationName": "MarketPrices"
-        }
         try:
-            resp = await self.websession.post(DATA_URL, json=query_data)
+            _LOGGER.debug("Fetching Frank Energie data for today %s", self.entry.entry_id)
+            prices_today = await self.__fetch_prices_with_fallback(today, tomorrow)
+            # Only fetch data for tomorrow after 13:00 UTC
+            if datetime.utcnow().hour >= 13:
+                _LOGGER.debug("Fetching Frank Energie data for tomorrow")
+                prices_tomorrow = await self.__fetch_prices_with_fallback(tomorrow, day_after_tomorrow)
 
-            data = await resp.json()
-            return data['data']
+            data_month_summary = (
+                await self.api.month_summary() if self.api.is_authenticated else None
+            )
+            data_invoices = (
+                await self.api.invoices() if self.api.is_authenticated else None
+            )
+            data_user = (
+                await self.api.user() if self.api.is_authenticated else None
+            )
+            _LOGGER.debug("Data user: %s", data_user)
 
-        except (asyncio.TimeoutError, aiohttp.ClientError, KeyError) as error:
-            raise UpdateFailed(f"Fetching energy data failed: {error}") from error
+        except UpdateFailed as err:
+            # Check if we still have data to work with, if so, return this data. Still log the error as warning
+            if (
+                self.coordinator.data[DATA_ELECTRICITY].get_future_prices()
+                and self.coordinator.data[DATA_GAS].get_future_prices()
+            ):
+                _LOGGER.warning(str(err))
+                #return self.data
+                return self.coordinator.data
+            # Re-raise the error if there's no data from future left
+            raise err
 
-    def processed_data(self):
-        return {
-            'elec': self.get_current_hourprices(self.data['marketPricesElectricity']),
-            'gas': self.get_current_hourprices(self.data['marketPricesGas']),
-            'today_elec': self.get_hourprices(self.data['marketPricesElectricity']),
-            'today_gas': self.get_hourprices(self.data['marketPricesGas'])
-        }
+        except RequestException as ex:
+            if str(ex).startswith("user-error:"):
+                raise ConfigEntryAuthFailed from ex
+            raise UpdateFailed(ex) from ex
 
-    def get_current_hourprices(self, hourprices) -> Tuple:
-        for hour in hourprices:
-            if dt.parse_datetime(hour['from']) <= dt.utcnow() < dt.parse_datetime(hour['till']):
-                return hour['marketPrice'], hour['marketPriceTax'], hour['sourcingMarkupPrice'], hour['energyTaxPrice']
+        except AuthException as ex:
+            _LOGGER.debug("Authentication tokens expired, trying to renew them (%s)", ex)
+            await self.__try_renew_token()
+            # Tell we have no data, so update coordinator tries again with renewed tokens
+            raise UpdateFailed(ex) from ex
 
-    def get_hourprices(self, hourprices) -> Dict:
-        yesterday_prices = dict()
-        today_prices = dict()
-        tomorrow_prices = dict()
-        i=0
-        for hour in hourprices:
-            # Calling astimezone(None) automagically gets local timezone
-            fromtime = dt.parse_datetime(hour['from']).astimezone()
-            if i < 24:
-               yesterday_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
-            if 23 < i < 48:
-               today_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
-            if 47 < i < 72:
-               tomorrow_prices[fromtime] = hour['marketPrice'] + hour['marketPriceTax'] + hour['sourcingMarkupPrice'] + hour['energyTaxPrice']
-            i=i+1
+        if not prices_tomorrow is None:
+            return {
+                DATA_ELECTRICITY: prices_today.electricity + prices_tomorrow.electricity,
+                DATA_GAS: prices_today.gas + prices_tomorrow.gas,
+                DATA_MONTH_SUMMARY: data_month_summary,
+                DATA_INVOICES: data_invoices,
+                DATA_USER: data_user,
+            }
+        else:
+            return {
+                DATA_ELECTRICITY: prices_today.electricity,
+                DATA_GAS: prices_today.gas,
+                DATA_MONTH_SUMMARY: data_month_summary,
+                DATA_INVOICES: data_invoices,
+                DATA_USER: data_user,
+            }
 
-        if 3 < datetime.now().hour < 24:
-            return today_prices
-        if -1 < datetime.now().hour < 3:
-            if tomorrow_prices:
-                return tomorrow_prices
-        return today_prices
+    async def __fetch_prices_with_fallback(self, start_date: date, end_date: date) -> MarketPrices:
+        if not self.api.is_authenticated:
+            return await self.api.prices(start_date, end_date)
+        else:
+            user_prices = await self.api.user_prices(start_date)
+
+            #if len(user_prices.gas.all) > 0 and len(user_prices.electricity.all) > 0:
+            if user_prices.gas.all and user_prices.electricity.all:
+                # If user_prices are available for both gas and electricity return them
+                return user_prices
+            else:
+                public_prices = await self.api.prices(start_date, end_date)
+
+                # Use public prices if no user prices are available
+                if len(user_prices.gas.all) == 0:
+                #if user_prices.gas.all is None:
+                    _LOGGER.info("No gas prices found for user, falling back to public prices")
+                    user_prices.gas = public_prices.gas
+
+                if len(user_prices.electricity.all) == 0:
+                #if user_prices.electricity.all is None:
+                    _LOGGER.info("No electricity prices found for user, falling back to public prices")
+                    user_prices.electricity = public_prices.electricity
+
+                return user_prices
+
+    async def __try_renew_token(self):
+        try:
+            updated_tokens = await self.api.renew_token()
+
+            data = {
+                CONF_ACCESS_TOKEN: updated_tokens.authToken,
+                CONF_TOKEN: updated_tokens.refreshToken,
+            }
+            # Update the config entry with the new tokens
+            self.hass.config_entries.async_update_entry(self.entry, data=data)
+            # await self.hass.config_entries.async_update_entry(self.entry, data=data) #geeft fout
+
+            _LOGGER.debug("Successfully renewed token")
+
+        except AuthException as ex:
+            _LOGGER.error("Failed to renew token: %s. Starting user reauth flow", ex)
+            raise ConfigEntryAuthFailed from ex
+        
+async def run_hourly(start_time: datetime, end_time: datetime, interval: timedelta, method: Callable) -> None:
+    """Run the specified method at regular intervals between start_time and end_time."""
+    while True:
+        now = datetime.now().time()
+        if start_time <= now <= end_time:
+            await method()
+        await asyncio.sleep(interval.total_seconds())
+
+async def hourly_refresh(coordinator: FrankEnergieCoordinator) -> None:
+    await coordinator.async_refresh()
+
+async def start_coordinator(hass: HomeAssistant) -> None:
+    async with aiohttp.ClientSession() as session:
+        coordinator = FrankEnergieCoordinator(hass, session)
+        await coordinator.async_refresh()
+
+        start_time = time(15, 0)
+        end_time = time(16, 0)
+        interval = timedelta(minutes=5)
+
+        await run_hourly(start_time, end_time, interval, lambda: hourly_refresh(coordinator))
