@@ -63,75 +63,76 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self._show_login_form(errors=errors)
 
         # Create an instance of the FrankEnergieAPI class
-        api = FrankEnergie()
-
-        try:
-            # Authenticate with Frank Energie API
-            auth = await api.login(
-                    user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
-                )
-        except AuthException:
-            _LOGGER.exception("Error during login")
-            return await self.async_step_login(errors={"base": "invalid_auth"})
-
-        data = {
-            CONF_USERNAME: user_input[CONF_USERNAME],
-            CONF_ACCESS_TOKEN: auth.authToken,
-            CONF_TOKEN: auth.refreshToken,
-        }
-
-        # Check if a refresh token is available
-        if self._reauth_entry and CONF_TOKEN in self._reauth_entry.data:
-            # Use the refresh token to get a new auth token
-            async with FrankEnergie() as api:
-                try:
-                    # Save the credentials to the config entry's data
-                    self.hass.config_entries.async_update_entry(
-                        self._reauth_entry,
-                        data=data,
-                    )
-
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
-                    )
-
-                    return self.async_abort(reason="reauth_successful")
-                except AuthException as ex:
-                    _LOGGER.exception("Error during login", exc_info=ex)
-                    return await self.async_step_login(errors={"base": "invalid_auth"})
-        else:
-            # Perform the initial login
-            async with FrankEnergie() as api:
-                try:
-                    auth = await api.login(
+        # api = FrankEnergie()
+        async with FrankEnergie() as api:
+            try:
+                # Authenticate with Frank Energie API
+                auth = await api.login(
                         user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
                     )
-                except AuthException as ex:
+            except AuthException as ex:
+                    # _LOGGER.exception("Error during login")
                     _LOGGER.exception("Error during login", exc_info=ex)
                     return await self.async_step_login(errors={"base": "invalid_auth"})
-
-        data = {
-            CONF_USERNAME: user_input[CONF_USERNAME],
-            CONF_ACCESS_TOKEN: auth.authToken,
-            CONF_TOKEN: auth.refreshToken,
-        }
-
-        if self._reauth_entry:
-            self.hass.config_entries.async_update_entry(
-                self._reauth_entry,
-                data=data,
-            )
-
-            self.hass.async_create_task(
-                self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
-            )
-
-            return self.async_abort(reason="reauth_successful")
-
-        await self.async_set_unique_id(user_input[CONF_USERNAME])
-        self._abort_if_unique_id_configured()
-
-        return await self._async_create_entry(data)
+    
+            data = {
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_ACCESS_TOKEN: auth.authToken,
+                CONF_TOKEN: auth.refreshToken,
+            }
+    
+            # Check if a refresh token is available
+            if self._reauth_entry and CONF_TOKEN in self._reauth_entry.data:
+                # Use the refresh token to get a new auth token
+                async with FrankEnergie() as api:
+                    try:
+                        # Save the credentials to the config entry's data
+                        self.hass.config_entries.async_update_entry(
+                            self._reauth_entry,
+                            data=data,
+                        )
+    
+                        self.hass.async_create_task(
+                            self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
+                        )
+    
+                        return self.async_abort(reason="reauth_successful")
+                    except AuthException as ex:
+                        _LOGGER.exception("Error during login", exc_info=ex)
+                        return await self.async_step_login(errors={"base": "invalid_auth"})
+            else:
+                # Perform the initial login
+                async with FrankEnergie() as api:
+                    try:
+                        auth = await api.login(
+                            user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+                        )
+                    except AuthException as ex:
+                        _LOGGER.exception("Error during login", exc_info=ex)
+                        return await self.async_step_login(errors={"base": "invalid_auth"})
+    
+            data = {
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_ACCESS_TOKEN: auth.authToken,
+                CONF_TOKEN: auth.refreshToken,
+            }
+    
+            if self._reauth_entry:
+                self.hass.config_entries.async_update_entry(
+                    self._reauth_entry,
+                    data=data,
+                )
+    
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
+                )
+    
+                return self.async_abort(reason="reauth_successful")
+    
+            await self.async_set_unique_id(user_input[CONF_USERNAME])
+            self._abort_if_unique_id_configured()
+    
+            return await self._async_create_entry(data)
 
     async def async_step_user(
         self, user_input=None, errors=None
@@ -154,7 +155,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input[CONF_AUTHENTICATION]:
             return await self.async_step_login()
 
-        data = {}
+        data: dict[str, Any] = {}
 
         return await self._async_create_entry(data)
 
@@ -171,9 +172,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=self._errors,
         )
 
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> FlowResult:
+    async def async_step_reauth(self) -> FlowResult:
         """Handle configuration by re-auth."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
