@@ -43,65 +43,27 @@
             }
         }
     },
-    "entity": {
-        "binary_sensor": {
-            "sun": {
-                "name": "Zon",
-                "state": {
-                    "on": "Boven de horizon",
-                    "off": "Onder de horizon"
-                },
-                "state_attributes": {
-                    "sunrise": {
-                        "name": "Zonsopkomst"
-                    },
-                    "sunset": {
-                        "name": "Zonsondergang"
-                    },
-                    "sun_chance0": {
-                        "name": "Zonkans vandaag"
-                    },
-                    "sun_chance1": {
-                        "name": "Zonkans morgen"
-                    },
-                    "sun_chance2": {
-                        "name": "Zonkans overmorgen"
-                    }
-                }
-            },
-            "alarm": {
-                "name": "Waarschuwing",
-                "state_attributes": {
-                    "title": {
-                        "name": "Titel"
-                    },
-                    "description": {
-                        "name": "Beschrijving"
-                    },
-                    "code": {
-                        "name": "Code",
-                        "state": {
-                            "groen": "Groen",
-                            "geel": "Geel",
-                            "oranje": "Oranje",
-                            "rood": "Rood"
-                        }
-                    },
-                    "next_code": {
-                        "name": "Volgende code",
-                        "state": {
-                            "groen": "Groen",
-                            "geel": "Geel",
-                            "oranje": "Oranje",
-                            "rood": "Rood"
-                        }
-                    },
-                    "timestamp": {
-                        "name": "Volgende waarschuwing"
-                    }
-                }
+    "device": {
+        "Frank Energie - Prices": {
+            "name": "Frank Energie - Prijzen",
+            "model": {
+                "Prices": "Prijzen"
             }
         },
+        "Frank Energie - Costs": {
+            "name": "Frank Energie - Kosten",
+            "model": {
+                "Costs": "Kosten"
+            }
+        },
+        "Frank Energie - User": {
+            "name": "Frank Energie - Gebruiker",
+            "model": {
+                "User": "Gebruiker"
+            }
+        }
+    },
+    "entity": {
         "sensor": {
             "current_electricity_price": {
                 "name": "Huidige elektriciteitsprijs (All-in)",
@@ -148,10 +110,10 @@
                 "name": "Elektriciteit procent BTW"
             },
             "elec_previoushour": {
-                "name": "elektriciteitsprijs vorig uur (All-in)"
+                "name": "Elektriciteitsprijs vorig uur (All-in)"
             },
             "elec_nexthour": {
-                "name": "elektriciteitsprijs volgend uur (All-in)"
+                "name": "Elektriciteitsprijs volgend uur (All-in)"
             },
             "elec_previoushour_market": {
                 "name": "Elektriciteit inkoopprijs vorig uur"
@@ -193,37 +155,37 @@
                 "name": "Gemiddelde elektriciteit inkoopprijs + BTW + inkoopvergoeding komende uren"
             },
             "average_electricity_market_price_upcoming": {
-                "name": "Gemiddelde elektriciteit inkoopprijs komende uren"
+                "name": "Gemiddelde elektriciteitsprijs komende uren (All-in)"
             },
             "average_electricity_price_upcoming_all_in": {
                 "name": "Gemiddelde elektriciteitsprijs komende uren (All-in)"
             },
             "elec_min": {
-                "name": "Laagste elektriciteit prijs vandaag (All-in)"
+                "name": "Laagste elektriciteitsprijs vandaag (All-in)"
             },
             "elec_max": {
-                "name": "Hoogste elektriciteit prijs vandaag (All-in)"
+                "name": "Hoogste elektriciteitsprijs vandaag (All-in)"
             },
             "elec_tomorrow_min": {
-                "name": "Laagste elektriciteit prijs morgen (All-in)"
+                "name": "Laagste elektriciteitsprijs morgen (All-in)"
             },
             "elec_tomorrow_max": {
-                "name": "Hoogste elektriciteit prijs morgen (All-in)"
+                "name": "Hoogste elektriciteitsprijs morgen (All-in)"
             },
             "elec_upcoming_min": {
-                "name": "Laagste elektriciteit prijs komende uren (All-in)"
+                "name": "Laagste elektriciteitsprijs komende uren (All-in)"
             },
             "elec_upcoming_max": {
-                "name": "Hoogste elektriciteit prijs komende urenn (All-in)"
+                "name": "Hoogste elektriciteitsprijs komende urenn (All-in)"
             },
             "elec_all": {
-                "name": "Gemiddelde elektriciteit prijs alle uren (All-in)"
+                "name": "Gemiddelde elektriciteitsprijs alle uren (All-in)"
             },
             "elec_all_min": {
-                "name": "Laagste elektriciteit prijs alle uren (All-in)"
+                "name": "Laagste elektriciteitsprijs alle uren (All-in)"
             },
             "elec_all_max": {
-                "name": "Hoogste elektriciteit prijs alle uren (All-in)"
+                "name": "Hoogste elektriciteitsprijs alle uren (All-in)"
             },
             "gas_markup": {
                 "name": "Huidige gasprijs (All-in)"
@@ -282,7 +244,7 @@
             "gas_min": {
                 "name": "Laagste gasprijs vandaag (All-in)"
             },
-            "gas_msc": {
+            "gas_max": {
                 "name": "Hoogste gasprijs vandaag (All-in)"
             },
             "gas_tomorrow_min": {
@@ -364,10 +326,16 @@
                 "name": "Factuurbedrag volgende maand"
             },
             "proposition_type": {
-                "name": "Aanbod type",
+                "name": "Aanbod",
                 "state": {
                     "DYNAMIC": "Dynamisch"
                 }
+            },
+            "delivery_start_date": {
+                "name": "Levering startdatum"
+            },
+            "delivery_end_date": {
+                "name": "Levering einddatum"
             },
             "first_meter_reading_date": {
                 "name": "Eerste meter leesdatum"
@@ -401,6 +369,9 @@
             "reference": {
                 "name": "klantnummer"
             },
+            "segments": {
+                "name": "segmenten"
+            },
             "friends_count": {
                 "name": "Aantal vrienden"
             },
@@ -414,6 +385,7 @@
                 "name": "Status",
                 "state": {
                     "ACTIVE": "Actief",
+                    "IN_DELIVERY": "In levering",
                     "DELIVERY_ENDED": "Levering beëindigd",
                     "INACTIVE": "Inactief"
                 }
@@ -441,19 +413,4 @@
             }
         }
     },
-    "services": {
-        "set_speed": {
-            "name": "Set speed",
-            "description": "Sets fan speed.",
-            "fields": {
-                "speed": {
-                    "name": "Speed",
-                    "description": "The speed to set."
-                }
-            }
-        }
-    },
-    "translation": {
-        "current_electricity_price": "Huidige elektriciteitsprijs (All-in)"
-    }
 }
