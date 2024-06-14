@@ -9,7 +9,7 @@
     "issue_tracker": "https://github.com/bajansen/home-assistant-frank_energie/issues",
     "name": "Frank Energie",
     "requirements": [
-        "python-frank-energie==6.0.0"
+        "python-frank-energie==6.0.1"
     ],
     "version": "3.0.1"
 }
