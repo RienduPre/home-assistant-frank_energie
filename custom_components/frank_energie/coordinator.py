@@ -12,26 +12,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (DataUpdateCoordinator,
+                                                      UpdateFailed)
 from python_frank_energie import FrankEnergie
 from python_frank_energie.exceptions import AuthException, RequestException
-from python_frank_energie.models import (
-    Invoices,
-    MarketPrices,
-    MonthSummary,
-    PriceData,
-    User,
-)
+from python_frank_energie.models import (Invoices, MarketPrices, MonthSummary,
+                                         PriceData, User)
 
-from .const import (
-    _LOGGER,
-    DATA_ELECTRICITY,
-    DATA_GAS,
-    DATA_INVOICES,
-    DATA_MONTH_SUMMARY,
-    DATA_USER,
-    DeviceResponseEntry,
-)
+from .const import (_LOGGER, DATA_ELECTRICITY, DATA_GAS, DATA_INVOICES,
+                    DATA_MONTH_SUMMARY, DATA_USER, DeviceResponseEntry)
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -42,6 +32,7 @@ class FrankEnergieData(TypedDict):
     """Electricity price data."""
 
     DATA_GAS: PriceData
+
     """Gas price data."""
 
     DATA_MONTH_SUMMARY: Optional[MonthSummary]
@@ -160,51 +151,34 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[DeviceResponseEntry]):
                 DATA_USER: data_user,
             }
 
-#        if prices_tomorrow is not None:
-#            return FrankEnergieData(
-#                DATA_ELECTRICITY=prices_today.electricity + prices_tomorrow.electricity,
-#                DATA_GAS=prices_today.gas + prices_tomorrow.gas,
-#                DATA_MONTH_SUMMARY=data_month_summary,
-#                DATA_INVOICES=data_invoices,
-#                DATA_USER=data_user,
-#            )
-#        else:
-#            return FrankEnergieData(
-#                DATA_ELECTRICITY=prices_today.electricity,
-#                DATA_GAS=prices_today.gas,
-#                DATA_MONTH_SUMMARY=data_month_summary,
-#                DATA_INVOICES=data_invoices,
-#                DATA_USER=data_user,
-#            )
-
     async def __fetch_prices_with_fallback(self, start_date: date, end_date: date) -> MarketPrices:
         """Fetch prices with fallback mechanism."""
 
         if not self.api.is_authenticated:
             return await self.api.prices(start_date, end_date)
-        else:
-            # user_prices = await self.api.user_prices(start_date, end_date)
-            user_prices = await self.api.user_prices(start_date, self.site_reference, end_date)
 
-            # if len(user_prices.gas.all) > 0 and len(user_prices.electricity.all) > 0:
-            if user_prices.gas.all and user_prices.electricity.all:
-                # If user_prices are available for both gas and electricity return them
-                return user_prices
-            else:
-                public_prices = await self.api.prices(start_date, end_date)
+        # user_prices = await self.api.user_prices(start_date, end_date)
+        user_prices = await self.api.user_prices(start_date, self.site_reference, end_date)
 
-                # Use public prices if no user prices are available
-                if len(user_prices.gas.all) == 0:
-                    # if user_prices.gas.all is None:
-                    _LOGGER.info("No gas prices found for user, falling back to public prices")
-                    user_prices.gas = public_prices.gas
+        # if len(user_prices.gas.all) > 0 and len(user_prices.electricity.all) > 0:
+        if user_prices.gas.all and user_prices.electricity.all:
+            # If user_prices are available for both gas and electricity return them
+            return user_prices
 
-                if len(user_prices.electricity.all) == 0:
-                    # if user_prices.electricity.all is None:
-                    _LOGGER.info("No electricity prices found for user, falling back to public prices")
-                    user_prices.electricity = public_prices.electricity
+        public_prices = await self.api.prices(start_date, end_date)
 
-                return user_prices
+        # Use public prices if no user prices are available
+        if len(user_prices.gas.all) == 0:
+            # if user_prices.gas.all is None:
+            _LOGGER.info("No gas prices found for user, falling back to public prices")
+            user_prices.gas = public_prices.gas
+
+        if len(user_prices.electricity.all) == 0:
+            # if user_prices.electricity.all is None:
+            _LOGGER.info("No electricity prices found for user, falling back to public prices")
+            user_prices.electricity = public_prices.electricity
+
+        return user_prices
 
     async def __try_renew_token(self):
         """Try to renew authentication token."""
