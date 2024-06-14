@@ -1,12 +1,16 @@
 """Frank Energie current electricity and gas price information service."""
 # sensor.py
+import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
-                                             SensorEntityDescription,
-                                             SensorStateClass)
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN
 from homeassistant.core import HassJob, HomeAssistant
@@ -18,12 +22,29 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
-                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_GAS,
-                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USER, DOMAIN, ICON,
-                    SERVICE_NAME_COSTS, SERVICE_NAME_PRICES, SERVICE_NAME_USER,
-                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
+from .const import (
+    API_CONF_URL,
+    ATTR_TIME,
+    ATTRIBUTION,
+    COMPONENT_TITLE,
+    CONF_COORDINATOR,
+    DATA_ELECTRICITY,
+    DATA_GAS,
+    DATA_INVOICES,
+    DATA_MONTH_SUMMARY,
+    DATA_USER,
+    DOMAIN,
+    ICON,
+    SERVICE_NAME_COSTS,
+    SERVICE_NAME_PRICES,
+    SERVICE_NAME_USER,
+    UNIT_ELECTRICITY,
+    UNIT_GAS,
+    VERSION,
+)
 from .coordinator import FrankEnergieCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 DATA_DELIVERY_SITE: Final[str] = "delivery_site"
 FORMAT_DATE = "%d-%m-%Y"
@@ -102,11 +123,13 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="current_electricity_price",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        device_class=None,
+        device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.total,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.total
+        if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_ELECTRICITY].asdict(
-            "total", timezone="Europe/Amsterdam")},
+            "total", timezone="Europe/Amsterdam")
+        }
     ),
     FrankEnergieEntityDescription(
         key="elec_market",
@@ -116,9 +139,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price
+        if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
-            "prices": data[DATA_ELECTRICITY].asdict("market_price")},
+            "prices": data[DATA_ELECTRICITY].asdict("market_price")
+        }
     ),
     FrankEnergieEntityDescription(
         key="elec_tax",
@@ -128,10 +153,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_with_tax,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_with_tax
+        if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
             "prices": data[DATA_ELECTRICITY].asdict("market_price_with_tax")
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="elec_tax_vat",
@@ -141,10 +167,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_tax,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_tax
+        if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
-            'prices': data[DATA_ELECTRICITY].asdict('market_price_tax')},
-        entity_registry_enabled_default=True,
+            'prices': data[DATA_ELECTRICITY].asdict('market_price_tax')
+        },
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_sourcing",
@@ -154,19 +182,21 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.sourcing_markup_price,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
+        if data[DATA_ELECTRICITY].current_hour else None,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_tax_only",
         name="Current electricity tax only",
         translation_key="elec_tax_only",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        suggested_display_precision=3,
+        suggested_display_precision=5,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.energy_tax_price,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.energy_tax_price
+        if data[DATA_ELECTRICITY].current_hour else None,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_fixed_kwh",
@@ -180,7 +210,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
             + data[DATA_ELECTRICITY].current_hour.energy_tax_price  # noqa: W503
         ) if data.get(DATA_ELECTRICITY) and data[DATA_ELECTRICITY].current_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_var_kwh",
@@ -193,7 +223,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_with_tax
         ) if data.get(DATA_ELECTRICITY) and data[DATA_ELECTRICITY].current_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_markup",
@@ -202,8 +232,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.total,
-        attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("total")},
+        value_fn=lambda data: data[DATA_GAS].current_hour.total
+        if data[DATA_GAS].current_hour else None,
+        attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("total")}
     ),
     FrankEnergieEntityDescription(
         key="gas_market",
@@ -212,8 +243,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.market_price,
-        attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("market_price")},
+        value_fn=lambda data: data[DATA_GAS].current_hour.market_price
+        if data[DATA_GAS].current_hour else None,
+        attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("market_price")}
     ),
     FrankEnergieEntityDescription(
         key="gas_tax",
@@ -222,10 +254,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_with_tax,
+        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_with_tax
+        if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {
             "prices": data[DATA_GAS].asdict("market_price_with_tax")},
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_tax_vat",
@@ -234,8 +267,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_tax,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_tax
+        if data[DATA_GAS].current_hour else None,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_sourcing",
@@ -244,8 +278,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.sourcing_markup_price,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_GAS].current_hour.sourcing_markup_price
+        if data[DATA_GAS].current_hour else None,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_tax_only",
@@ -254,8 +289,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].current_hour.energy_tax_price,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_GAS].current_hour.energy_tax_price
+        if data[DATA_GAS].current_hour else None,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_min",
@@ -264,8 +300,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].today_min.total,
-        attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_min.date_from},
+        value_fn=lambda data: data[DATA_GAS].today_min.total
+        if data[DATA_GAS].today_min else None,
+        attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_min.date_from}
     ),
     FrankEnergieEntityDescription(
         key="gas_max",
@@ -275,32 +312,35 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_GAS].today_max.total,
-        attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_max.date_from},
+        value_fn=lambda data: data[DATA_GAS].today_max.total
+        if data[DATA_GAS].today_max else None,
+        attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_max.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_min",
         name="Lowest electricity price today (All-in)",
         translation_key="elec_min",
-        device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].today_min.total,
+        value_fn=lambda data: data[DATA_ELECTRICITY].today_min.total
+        if data[DATA_ELECTRICITY].today_min else None,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].today_min.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].today_min.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_max",
         name="Highest electricity price today (All-in)",
         translation_key="elec_max",
-        device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].today_max.total,
+        value_fn=lambda data: data[DATA_ELECTRICITY].today_max.total
+        if data[DATA_ELECTRICITY].today_max else None,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].today_max.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].today_max.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_avg",
@@ -308,10 +348,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_today_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_avg,
         attr_fn=lambda data: {
-            'prices': data[DATA_ELECTRICITY].asdict('total', today_only=True, timezone="Europe/Amsterdam")},
+            'prices': data[DATA_ELECTRICITY].asdict('total', today_only=True, timezone="Europe/Amsterdam")}
     ),
     FrankEnergieEntityDescription(
         key="elec_previoushour",
@@ -320,7 +361,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_ELECTRICITY].previous_hour.total if data[DATA_ELECTRICITY].previous_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_nexthour",
@@ -329,7 +370,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_ELECTRICITY].next_hour.total if data[DATA_ELECTRICITY].next_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_market_percent_tax",
@@ -339,9 +380,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=0,
         device_class='',
         icon="mdi:percent",
-        value_fn=lambda data: (100 / (data[DATA_ELECTRICITY].current_hour.market_price / data[DATA_ELECTRICITY].current_hour.market_price_tax)
-                               ) if data[DATA_ELECTRICITY].current_hour.market_price != 0 and data[DATA_ELECTRICITY].current_hour.market_price_tax != 0 else 21,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: (100 / (data[DATA_ELECTRICITY].current_hour.market_price / data[DATA_ELECTRICITY].current_hour.market_price_tax))
+        if data[DATA_ELECTRICITY].current_hour and data[DATA_ELECTRICITY].current_hour.market_price != 0 and data[DATA_ELECTRICITY].current_hour.market_price_tax != 0 else 21,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_market_percent_tax",
@@ -351,9 +392,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=0,
         device_class='',
         icon="mdi:percent",
-        value_fn=lambda data: (100 / (data[DATA_GAS].current_hour.market_price / data[DATA_GAS].current_hour.market_price_tax)
-                               ) if data[DATA_GAS].current_hour.market_price != 0 and data[DATA_GAS].current_hour.market_price_tax != 0 else 21,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: (100 / (data[DATA_GAS].current_hour.market_price / data[DATA_GAS].current_hour.market_price_tax))
+        if data[DATA_GAS].current_hour and data[DATA_GAS].current_hour.market_price != 0 and data[DATA_GAS].current_hour.market_price_tax != 0 else 21,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_all_min",
@@ -363,7 +404,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_ELECTRICITY].all_min.total,
         suggested_display_precision=4,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].all_min.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].all_min.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_all_max",
@@ -373,7 +414,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_ELECTRICITY].all_max.total,
         suggested_display_precision=4,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].all_max.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].all_max.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_min",
@@ -385,7 +426,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=4,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].tomorrow_min.date_from}
-        if data[DATA_ELECTRICITY].tomorrow_min else {},
+        if data[DATA_ELECTRICITY].tomorrow_min else {}
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_max",
@@ -397,7 +438,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=4,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].tomorrow_max.date_from}
-        if data[DATA_ELECTRICITY].tomorrow_max else {},
+        if data[DATA_ELECTRICITY].tomorrow_max else {}
     ),
     FrankEnergieEntityDescription(
         key="elec_upcoming_min",
@@ -407,7 +448,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_min.total,
         suggested_display_precision=4,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].upcoming_min.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].upcoming_min.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_upcoming_max",
@@ -417,25 +458,25 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_max.total,
         suggested_display_precision=4,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_ELECTRICITY].upcoming_max.date_from},
+            ATTR_TIME: data[DATA_ELECTRICITY].upcoming_max.date_from}
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_tax",
         name="Average electricity price today including tax",
         translation_key="average_electricity_price_today_including_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_avg,
         suggested_display_precision=3,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_avg,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_tax_markup",
         name="Average electricity price today including tax and markup",
         translation_key="average_electricity_price_today_including_tax_and_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_markup_avg,
         suggested_display_precision=3,
-        entity_registry_enabled_default=True,
+        value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_markup_avg,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_avg_market",
@@ -443,43 +484,45 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_market_price_today",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_market_avg,
-        suggested_display_precision=3,
+        suggested_display_precision=3
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg_tax_markup",
         name="Average electricity price tomorrow including tax and markup",
         translation_key="average_electricity_price_tomorrow_including_tax_and_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax_and_markup,
         suggested_display_precision=3,
+        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax_and_markup
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg",
         name="Average electricity price tomorrow (All-in)",
         translation_key="average_electricity_price_tomorrow_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=3,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price
         # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.total
         if data[DATA_ELECTRICITY].tomorrow_avg else None,
-        suggested_display_precision=3,
         attr_fn=lambda data: {'tomorrow_prices': data[DATA_ELECTRICITY].asdict(
-            'total', tomorrow_only=True, timezone="Europe/Amsterdam")},
+            'total', tomorrow_only=True, timezone="Europe/Amsterdam")}
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg_tax",
         name="Average electricity price tomorrow including tax",
         translation_key="average_electricity_price_tomorrow_including_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax,
         suggested_display_precision=3,
+        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax
     ),
     FrankEnergieEntityDescription(
         key="elec_tomorrow_avg_market",
         name="Average electricity market price tomorrow",
         translation_key="average_electricity_market_price_tomorrow",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_market_price,
         suggested_display_precision=3,
+        value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_market_price
     ),
     FrankEnergieEntityDescription(
         key="elec_market_upcoming",
@@ -487,9 +530,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_market_price_upcoming",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.marketPrice,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.marketPrice
+        if data[DATA_ELECTRICITY].upcoming_avg else None,
         attr_fn=lambda data: {'upcoming_prices': data[DATA_ELECTRICITY].asdict(
-            'marketPrice', upcoming_only=True)},
+            'marketPrice', upcoming_only=True)
+        }
+        if data[DATA_ELECTRICITY].upcoming_avg else {}
     ),
     FrankEnergieEntityDescription(
         key="elec_upcoming",
@@ -497,7 +543,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_upcoming_market",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total
+        if data[DATA_ELECTRICITY].upcoming_avg else None,
         attr_fn=lambda data: {'upcoming_prices': data[DATA_ELECTRICITY].asdict(
             'total', upcoming_only=True, timezone="Europe/Amsterdam")},
         # attr_fn=lambda data: data[DATA_ELECTRICITY].upcoming_attr,
@@ -508,9 +555,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_all",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_ELECTRICITY].all_avg.total,
+        value_fn=lambda data: data[DATA_ELECTRICITY].all_avg.total
+        if data[DATA_ELECTRICITY].all_avg else None,
         attr_fn=lambda data: {'all_prices': data[DATA_ELECTRICITY].asdict(
-            'total', timezone="Europe/Amsterdam")},
+            'total', timezone="Europe/Amsterdam")}
+        if data[DATA_ELECTRICITY].all_avg else {},
         # attr_fn=lambda data: data[DATA_ELECTRICITY].all_attr,
     ),
     FrankEnergieEntityDescription(
@@ -518,10 +567,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Current electricity price including tax and markup",
         translation_key="current_electricity_price_incl_tax_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_including_tax_and_markup,
+        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_including_tax_and_markup
+        if data[DATA_ELECTRICITY].current_hour else None,
         suggested_display_precision=3,
         attr_fn=lambda data: {'prices': data[DATA_ELECTRICITY].asdict(
-            'market_price_including_tax_and_markup')},
+            'market_price_including_tax_and_markup')
+        }
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_avg",
@@ -539,10 +590,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tax_markup",
         suggested_display_precision=3,
         native_unit_of_measurement=UNIT_GAS,
-        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_including_tax_and_markup,
+        value_fn=lambda data: data[DATA_GAS].current_hour.market_price_including_tax_and_markup
+        if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {'prices': data[DATA_GAS].asdict(
             'market_price_including_tax_and_markup')},
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_hourcount",
@@ -554,7 +606,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         device_class="None",
         value_fn=lambda data: data[DATA_ELECTRICITY].length,
         entity_registry_enabled_default=True,
-        entity_registry_visible_default=True,
+        entity_registry_visible_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_hourcount",
@@ -566,7 +618,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         device_class="None",
         value_fn=lambda data: data[DATA_GAS].length,
         entity_registry_enabled_default=True,
-        entity_registry_visible_default=True,
+        entity_registry_visible_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_previoushour_market",
@@ -576,7 +628,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].previous_hour.market_price
         if data[DATA_ELECTRICITY].previous_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="elec_nexthour_market",
@@ -586,7 +638,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].next_hour.market_price
         if data[DATA_ELECTRICITY].next_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_previoushour_all_in",
@@ -596,7 +648,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_GAS].previous_hour.total
         if data[DATA_GAS].previous_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_nexthour_all_in",
@@ -606,7 +658,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_GAS].next_hour.total
         if data[DATA_GAS].next_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_previoushour_market",
@@ -616,7 +668,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_GAS].previous_hour.marketPrice
         if data[DATA_GAS].previous_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_nexthour_market",
@@ -626,7 +678,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_GAS].next_hour.marketPrice
         if data[DATA_GAS].next_hour else None,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_avg_market",
@@ -634,7 +686,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market,
+        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_avg_market_tax",
@@ -642,7 +694,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market_tax",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax,
+        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_avg_market_tax_markup",
@@ -650,21 +702,21 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market_tax_markup",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax_markup,
+        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax_markup
     ),
     FrankEnergieEntityDescription(
         key="gas_today_avg_all_in",
         name="Average gas price today (All-in)",
         translation_key="gas_today_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
-        value_fn=lambda data: data[DATA_GAS].today_prices_total,
+        value_fn=lambda data: data[DATA_GAS].today_prices_total
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_avg_all_in",
         name="Average gas price tomorrow (All-in)",
         translation_key="gas_tomorrow_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
-        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_total,
+        value_fn=lambda data: data[DATA_GAS].tomorrow_prices_total
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_min",
@@ -679,7 +731,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             ATTR_TIME: data[DATA_GAS].tomorrow_min.date_from
             if data[DATA_GAS].tomorrow_min
             else None
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_max",
@@ -694,7 +746,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             ATTR_TIME: data[DATA_GAS].tomorrow_max.date_from
             if data[DATA_GAS].tomorrow_max
             else None
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="gas_market_upcoming",
@@ -702,35 +754,44 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_market_upcoming",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_GAS].upcoming_avg.marketPrice,
-        attr_fn=lambda data: {'prices': data[DATA_GAS].asdict('marketPrice')},
+        value_fn=lambda data: data[DATA_GAS].upcoming_avg.marketPrice
+        if data[DATA_GAS].upcoming_avg else None,
+        attr_fn=lambda data: {
+            'prices': data[DATA_GAS].asdict('marketPrice')
+        }
     ),
     FrankEnergieEntityDescription(
         key="gas_upcoming_min",
         name="Lowest gas price upcoming hours (All-in)",
         translation_key="gas_upcoming_min",
         native_unit_of_measurement=UNIT_GAS,
-        suggested_display_precision=3,
+        suggested_display_precision=4,
         value_fn=lambda data: data[DATA_GAS].upcoming_min.total,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_GAS].upcoming_min.date_from},
+            ATTR_TIME: data[DATA_GAS].upcoming_min.date_from
+        }
+        if data[DATA_ELECTRICITY].upcoming_min else {},
     ),
     FrankEnergieEntityDescription(
         key="gas_upcoming_max",
         name="Highest gas price upcoming hours (All-in)",
         translation_key="gas_upcoming_max",
         native_unit_of_measurement=UNIT_GAS,
-        suggested_display_precision=3,
+        suggested_display_precision=4,
         value_fn=lambda data: data[DATA_GAS].upcoming_max.total,
         attr_fn=lambda data: {
-            ATTR_TIME: data[DATA_GAS].upcoming_max.date_from},
+            ATTR_TIME: data[DATA_GAS].upcoming_max.date_from
+        }
     ),
     FrankEnergieEntityDescription(
         key="average_electricity_price_upcoming_all_in",
         name="Average electricity price upcoming (All-in)",
         translation_key="average_electricity_price_upcoming_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total
+        if data[DATA_ELECTRICITY].upcoming_avg else None,
         suggested_display_precision=3,
         attr_fn=lambda data: {
             "Number of hours": len(data[DATA_ELECTRICITY].upcoming_avg.values),
@@ -742,6 +803,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             'average_electricity_market_price_upcoming': data[DATA_ELECTRICITY].upcoming_avg.marketPrice,
             'upcoming_prices': data[DATA_ELECTRICITY].asdict('total', upcoming_only=True, timezone="Europe/Amsterdam"),
         }
+        if data[DATA_ELECTRICITY].upcoming_avg else {},
     ),
     FrankEnergieEntityDescription(
         key="average_electricity_price_upcoming_market",
@@ -749,11 +811,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_upcoming_market",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_avg
-        if data[DATA_ELECTRICITY].upcoming_market_avg else None,
+        if data[DATA_ELECTRICITY].upcoming_avg else None,
         suggested_display_precision=3,
-        attr_fn=lambda data: {'average_electricity_price_upcoming_market': data[DATA_ELECTRICITY].upcoming_market_avg,
-                              'upcoming_market_prices': data[DATA_ELECTRICITY].asdict('marketPrice', upcoming_only=True)
-                              },
+        attr_fn=lambda data: {
+            'average_electricity_price_upcoming_market': data[DATA_ELECTRICITY].upcoming_market_avg,
+            'upcoming_market_prices': data[DATA_ELECTRICITY].asdict('marketPrice', upcoming_only=True)
+        }
     ),
     FrankEnergieEntityDescription(
         key="average_electricity_price_upcoming_market_tax",
@@ -761,23 +824,25 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_upcoming_market_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_tax_avg
-        if data[DATA_ELECTRICITY].upcoming_market_tax_avg else None,
+        if data[DATA_ELECTRICITY].upcoming_avg else None,
         suggested_display_precision=3,
-        attr_fn=lambda data: {'average_electricity_price_upcoming_market_tax': data[DATA_ELECTRICITY].upcoming_market_tax_avg,
-                              'upcoming_market_tax_prices': data[DATA_ELECTRICITY].asdict('market_price_with_tax', upcoming_only=True)
-                              },
+        attr_fn=lambda data: {
+            'average_electricity_price_upcoming_market_tax': data[DATA_ELECTRICITY].upcoming_market_tax_avg,
+            'upcoming_market_tax_prices': data[DATA_ELECTRICITY].asdict('market_price_with_tax', upcoming_only=True)
+        }
     ),
     FrankEnergieEntityDescription(
         key="average_electricity_price_upcoming_market_tax_markup",
         name="Average electricity price (upcoming, market, tax and markup)",
         translation_key="average_electricity_price_upcoming_market_tax_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg if data[
-            DATA_ELECTRICITY].upcoming_market_tax_markup_avg else None,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg
+        if data[DATA_ELECTRICITY] else None,
         suggested_display_precision=3,
         attr_fn=lambda data: {
             'average_electricity_price_upcoming_market_tax_markup':
-                data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg},
+                data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg}
+        if data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg else {},
     ),
     FrankEnergieEntityDescription(
         key="gas_markup_before6am",
@@ -788,7 +853,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: sum(
             data[DATA_GAS].today_gas_before6am) / len(data[DATA_GAS].today_gas_before6am),
         attr_fn=lambda data: {"Number of hours": len(
-            data[DATA_GAS].today_gas_before6am)},
+            data[DATA_GAS].today_gas_before6am)}
     ),
     FrankEnergieEntityDescription(
         key="gas_markup_after6am",
@@ -799,7 +864,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: sum(
             data[DATA_GAS].today_gas_after6am) / len(data[DATA_GAS].today_gas_after6am),
         attr_fn=lambda data: {"Number of hours": len(
-            data[DATA_GAS].today_gas_after6am)},
+            data[DATA_GAS].today_gas_after6am)}
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_before6am",
@@ -813,7 +878,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             data[DATA_GAS].tomorrow_gas_before6am))
         if data[DATA_GAS].tomorrow_gas_before6am else None,
         attr_fn=lambda data: {"Number of hours": len(
-            data[DATA_GAS].tomorrow_gas_before6am)},
+            data[DATA_GAS].tomorrow_gas_before6am)}
     ),
     FrankEnergieEntityDescription(
         key="gas_tomorrow_after6am",
@@ -827,7 +892,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
             data[DATA_GAS].tomorrow_gas_after6am))
         if data[DATA_GAS].tomorrow_gas_after6am else None,
         attr_fn=lambda data: {"Number of hours": len(
-            data[DATA_GAS].tomorrow_gas_after6am)},
+            data[DATA_GAS].tomorrow_gas_after6am)}
     ),
 #    FrankEnergieEntityDescription(
 #        key="energy_consumption_sensor",
@@ -861,7 +926,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         ].actualCostsUntilLastMeterReadingDate,
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="expected_costs_until_last_meter_reading_date",
@@ -878,7 +943,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         ].expectedCostsUntilLastMeterReadingDate,
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="difference_costs_until_last_meter_reading_date",
@@ -895,7 +960,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         ].differenceUntilLastMeterReadingDate,
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="difference_costs_per_day",
@@ -912,7 +977,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         ].differenceUntilLastMeterReadingDateAvg,
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="expected_costs_this_month",
@@ -927,7 +992,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_MONTH_SUMMARY].expectedCosts,
         attr_fn=lambda data: {
             "Description": data[DATA_INVOICES].currentPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="expected_costs_per_day_this_month",
@@ -943,7 +1008,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate,
             "Description": data[DATA_INVOICES].currentPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="costs_per_day_till_now_this_month",
@@ -959,7 +1024,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Last update": data[DATA_MONTH_SUMMARY].lastMeterReadingDate,
             "Description": data[DATA_INVOICES].currentPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="invoice_previous_period",
@@ -977,7 +1042,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Start date": data[DATA_INVOICES].previousPeriodInvoice.StartDate,
             "Description": data[DATA_INVOICES].previousPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="invoice_current_period",
@@ -995,7 +1060,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Start date": data[DATA_INVOICES].currentPeriodInvoice.StartDate,
             "Description": data[DATA_INVOICES].currentPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="invoice_upcoming_period",
@@ -1013,7 +1078,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Start date": data[DATA_INVOICES].upcomingPeriodInvoice.StartDate,
             "Description": data[DATA_INVOICES].upcomingPeriodInvoice.PeriodDescription,
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="costs_this_year",
@@ -1029,7 +1094,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_INVOICES].TotalCostsThisYear
         else None,
         attr_fn=lambda data: {
-            'Invoices': data[DATA_INVOICES].AllInvoicesDictForThisYear},
+            'Invoices': data[DATA_INVOICES].AllInvoicesDictForThisYear
+        }
     ),
     FrankEnergieEntityDescription(
         key="total_costs",
@@ -1052,7 +1118,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
                if data[DATA_USER].firstMeterReadingDate else {}),
             **({"Last meter reading": dt.parse_date(data[DATA_USER].lastMeterReadingDate).strftime(FORMAT_DATE)}
                if data[DATA_USER].lastMeterReadingDate else {}),
-        },
+        }
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_month",
@@ -1064,10 +1130,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
-        )
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month()
         if data[DATA_INVOICES].allPeriodsInvoices
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_year",
@@ -1079,13 +1144,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_year(
-        )
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_year()
         if data[DATA_INVOICES].allPeriodsInvoices
         else None,
-        attr_fn=lambda data: {'Total amount': sum(
-            invoice.TotalAmount for invoice in data[DATA_INVOICES].allPeriodsInvoices
-        ), 'Number of years': len(data[DATA_INVOICES].get_all_invoices_dict_per_year()), 'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year()},
+        attr_fn=lambda data: {
+            'Total amount': sum(invoice.TotalAmount for invoice in data[DATA_INVOICES].allPeriodsInvoices),
+            'Number of years': len(data[DATA_INVOICES].get_all_invoices_dict_per_year()), 'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year()},
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_year_corrected",
@@ -1097,12 +1161,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
-        ) * 12
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month() * 12
         if data[DATA_INVOICES].allPeriodsInvoices
         else None,
-        attr_fn=lambda data: {'Month average': data[DATA_INVOICES].calculate_average_costs_per_month(
-        ), 'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year()},
+        attr_fn=lambda data: {
+            'Month average': data[DATA_INVOICES].calculate_average_costs_per_month(),
+            'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year()}
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_month_previous_year",
@@ -1117,7 +1181,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
             dt.now().year - 1)
         if data[DATA_INVOICES].allPeriodsInvoices
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_month_this_year",
@@ -1132,7 +1196,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
             dt.now().year)
         if data[DATA_INVOICES].allPeriodsInvoices
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="expected_costs_this_year",
@@ -1146,7 +1210,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_COSTS,
         value_fn=lambda data: data[DATA_INVOICES].calculate_expected_costs_this_year()
         if data[DATA_INVOICES].allPeriodsInvoices
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="costs_previous_year",
@@ -1162,7 +1226,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_INVOICES].TotalCostsPreviousYear
         else None,
         attr_fn=lambda data: {
-            'Invoices': data[DATA_INVOICES].AllInvoicesDictForPreviousYear},
+            'Invoices': data[DATA_INVOICES].AllInvoicesDictForPreviousYear}
     ),
     FrankEnergieEntityDescription(
         key="advanced_payment_amount",
@@ -1176,7 +1240,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].advancedPaymentAmount
         if data[DATA_USER].advancedPaymentAmount
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="has_CO2_compensation",
@@ -1187,7 +1251,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].hasCO2Compensation
         if data[DATA_USER].hasCO2Compensation
-        else False,
+        else False
     ),
     FrankEnergieEntityDescription(
         key="reference",
@@ -1199,7 +1263,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_USER].reference
         if data[DATA_USER].reference
         else None,
-        attr_fn=lambda data: data[DATA_USER].delivery_sites,
+        attr_fn=lambda data: data[DATA_USER].delivery_sites
     ),
     FrankEnergieEntityDescription(
         key="status",
@@ -1212,7 +1276,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_USER].status
         else None,
         attr_fn=lambda data: {
-            'Connections status': data[DATA_USER].connectionsStatus},
+            'Connections status': data[DATA_USER].connectionsStatus}
     ),
     FrankEnergieEntityDescription(
         key="propositionType",
@@ -1223,17 +1287,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].propositionType
         if data[DATA_USER].propositionType
-        else None,
-    ),
-    FrankEnergieEntityDescription(
-        key="propositionType2",
-        name="Aanbod type 2",
-        icon="mdi:connection",
-        authenticated=True,
-        service_name=SERVICE_NAME_USER,
-        value_fn=lambda data: data[DATA_DELIVERY_SITE].propositionType
-        if data[DATA_DELIVERY_SITE].propositionType
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="countryCode",
@@ -1244,7 +1298,42 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].countryCode
         if data[DATA_USER].countryCode
-        else None,
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="segments",
+        name="Segments",
+        translation_key="segments",
+        icon="mdi:segment",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: data[DATA_USER].segments
+        if data[DATA_USER].segments
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="deliveryStartDate",
+        name="Delivery start date",
+        translation_key="delivery_start_date",
+        icon="mdi:calendar-clock",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: dt.parse_date(
+            data[DATA_USER].deliveryStartDate).strftime(FORMAT_DATE)
+        if data[DATA_USER].deliveryStartDate
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="deliveryEndDate",
+        name="Delivery end date",
+        translation_key="delivery_end_date",
+        icon="mdi:calendar-clock",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: dt.parse_date(
+            data[DATA_USER].deliveryEndDate).strftime(FORMAT_DATE)
+        if data[DATA_USER].deliveryEndDate
+        else None
     ),
     FrankEnergieEntityDescription(
         key="firstMeterReadingDate",
@@ -1256,7 +1345,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: dt.parse_date(
             data[DATA_USER].firstMeterReadingDate).strftime(FORMAT_DATE)
         if data[DATA_USER].firstMeterReadingDate
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="lastMeterReadingDate",
@@ -1268,7 +1357,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: dt.parse_date(
             data[DATA_USER].lastMeterReadingDate).strftime(FORMAT_DATE)
         if data[DATA_USER].lastMeterReadingDate
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="treesCount",
@@ -1279,7 +1368,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].treesCount
         if data[DATA_USER].treesCount is not None
-        else 0,
+        else 0
     ),
     FrankEnergieEntityDescription(
         key="friendsCount",
@@ -1290,7 +1379,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].friendsCount
         if data[DATA_USER].friendsCount is not None
-        else 0,
+        else 0
     ),
     FrankEnergieEntityDescription(
         key="deliverySite",
@@ -1301,7 +1390,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].format_delivery_site_as_dict[0],
         attr_fn=lambda data: next(
-            iter(data[DATA_USER].delivery_site_as_dict.values())),
+            iter(data[DATA_USER].delivery_site_as_dict.values()))
     ),
     FrankEnergieEntityDescription(
         key="rewardPayoutPreference",
@@ -1313,7 +1402,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_USER].UserSettings.get(
             "rewardPayoutPreference")
         if data[DATA_USER].UserSettings
-        else None,
+        else None
     ),
     FrankEnergieEntityDescription(
         key="PushNotificationPriceAlerts",
@@ -1324,7 +1413,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].PushNotificationPriceAlerts[0]["isEnabled"]
         if data[DATA_USER].PushNotificationPriceAlerts
-        else None,
+        else None
     )
 )
 
@@ -1381,6 +1470,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers=device_info_identifiers,
             name=f"{COMPONENT_TITLE} - {description.service_name}",
+            translation_key=f"{COMPONENT_TITLE} - {description.service_name}",
             manufacturer=COMPONENT_TITLE,
             entry_type=DeviceEntryType.SERVICE,
             configuration_url=API_CONF_URL,
@@ -1402,12 +1492,17 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
     async def async_update(self):
         """Get the latest data and updates the states."""
         try:
-            self._attr_native_value = self.entity_description.value_fn(
-                self.coordinator.data
-            )
+            data = self.coordinator.data
+            self._attr_native_value = self.entity_description.value_fn(data)
         except (TypeError, IndexError, ValueError):
             # No data available
             self._attr_native_value = None
+        except ZeroDivisionError as e:
+            _LOGGER.error("Division by zero error in FrankEnergieSensor: %s", e)
+            self._attr_native_value = None
+#        except Exception as e:
+#            _LOGGER.error("Error updating FrankEnergieSensor: %s", e)
+#            self._attr_native_value = None
 
         # Cancel the currently scheduled event if there is any
         if self._unsub_update:
