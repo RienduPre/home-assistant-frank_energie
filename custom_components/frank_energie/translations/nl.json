@@ -1,11 +1,4 @@
 {
-    "frank_energie": {
-        "sensor_name": "Frank Energie Sensor",
-        "sensor_description": "This sensor provides data from Frank Energie."
-    },
-    "Frank Energie": {
-        "title": "Frank Energie"
-    },
     "title": "Frank Energie Nederland",
     "config": {
         "abort": {
@@ -15,6 +8,7 @@
         "error": {
             "invalid_auth": "Inloggegevens niet geaccepteerd, controleer de gegevens en probeer het opnieuw."
         },
+        "flow_title": "Frank Energie",
         "step": {
             "login": {
                 "title": "Inloggen bij Frank Energie",
@@ -28,6 +22,13 @@
                 "description": "Inloggen is niet nodig om deze integratie te kunnen gebruiken maar biedt wel de mogelijkheid extra gegevens op te halen.",
                 "data": {
                     "authentication": "Gebruik Frank Energie-accountgegevens"
+                }
+            },
+            "reconfigure": {
+                "title": "Inloggen bij Frank Energie",
+                "data": {
+                    "username": "Email",
+                    "password": "Wachtwoord"
                 }
             }
         }
@@ -64,6 +65,64 @@
         }
     },
     "entity": {
+        "binary_sensor": {
+            "sun": {
+                "name": "Zon",
+                "state": {
+                    "on": "Boven de horizon",
+                    "off": "Onder de horizon"
+                },
+                "state_attributes": {
+                    "sunrise": {
+                        "name": "Zonsopkomst"
+                    },
+                    "sunset": {
+                        "name": "Zonsondergang"
+                    },
+                    "sun_chance0": {
+                        "name": "Zonkans vandaag"
+                    },
+                    "sun_chance1": {
+                        "name": "Zonkans morgen"
+                    },
+                    "sun_chance2": {
+                        "name": "Zonkans overmorgen"
+                    }
+                }
+            },
+            "alarm": {
+                "name": "Waarschuwing",
+                "state_attributes": {
+                    "title": {
+                        "name": "Titel"
+                    },
+                    "description": {
+                        "name": "Beschrijving"
+                    },
+                    "code": {
+                        "name": "Code",
+                        "state": {
+                            "groen": "Groen",
+                            "geel": "Geel",
+                            "oranje": "Oranje",
+                            "rood": "Rood"
+                        }
+                    },
+                    "next_code": {
+                        "name": "Volgende code",
+                        "state": {
+                            "groen": "Groen",
+                            "geel": "Geel",
+                            "oranje": "Oranje",
+                            "rood": "Rood"
+                        }
+                    },
+                    "timestamp": {
+                        "name": "Volgende waarschuwing"
+                    }
+                }
+            }
+        },
         "sensor": {
             "current_electricity_price": {
                 "name": "Huidige elektriciteitsprijs (All-in)",
@@ -367,10 +426,10 @@
                 }
             },
             "reference": {
-                "name": "klantnummer"
+                "name": "Klantnummer"
             },
             "segments": {
-                "name": "segmenten"
+                "name": "Segmenten"
             },
             "friends_count": {
                 "name": "Aantal vrienden"
@@ -380,6 +439,31 @@
             },
             "advanced_payment_amount": {
                 "name": "Voorschotbedrag"
+            },
+            "full_name": {
+                "name": "Volledige naam"
+            },
+            "phone_number": {
+                "name": "Telefoonnummer"
+            },
+            "smartcharging_isactivated": {
+                "name": "Slim laden",
+                "state": {
+                    "True": "Actief",
+                    "False": "Niet actief"
+                },
+                "state_attributes": {
+                    "provider": {
+                        "name": "Aanbieder"
+                    },
+                    "Available In Country": {
+                        "name": "Beschikbaar in Nederland",
+                        "state": {
+                            "true": "Ja",
+                            "false": "Nee"
+                        }
+                    }
+                }
             },
             "status": {
                 "name": "Status",
@@ -410,7 +494,25 @@
                     "True": "Aan",
                     "False": "Uit"
                 }
+            },
+            "meter_type": {
+                "name": "Meter",
+                "state": {
+                    "SLM": "Slimme meter"
+                }
+            },
+            "EAN": {
+                "name": "EAN (Energie Account Nummer)"
+            },
+            "grid_operator": {
+                "name": "Netbeheerder"
+            },
+            "bank_account_number": {
+                "name": "Rekeningrummer"
+            },
+            "preferred_automatic_collection_day": {
+                "name": "Voorkeur automatische incasso dag"
             }
         }
-    },
+    }
 }
