@@ -8,9 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.discovery import load_platform
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import ConfigType
 from python_frank_energie import FrankEnergie
 
 from .const import CONF_COORDINATOR, DOMAIN
@@ -26,12 +24,21 @@ PLATFORMS = [Platform.SENSOR]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Frank Energie component from a config entry."""
     _LOGGER.debug("Setting up Frank Energie component for entry: %s", entry.entry_id)
+    _LOGGER.debug("Setting up Frank Energie entry: %s", entry)
+    _LOGGER.debug("Setting up Frank Energie entry data: %s", entry.data)
+    _LOGGER.debug("Setting up Frank Energie entry domain: %s", entry.domain)
+    _LOGGER.debug("Setting up Frank Energie entry unique_id: %s", entry.unique_id)
+    _LOGGER.debug("Setting up Frank Energie entry options: %s", entry.options)
     component = FrankEnergieComponent(hass, entry)
     return await component.setup()
 
 
-async def async_setup_platform(hass: HomeAssistant, config: dict[str, Any], async_add_entities, discovery_info=None):
-    """Set up the Frank Energie sensor platform."""
+async def async_setup_platform(
+    hass: HomeAssistant, config: dict[str, Any], async_add_entities, discovery_info=None
+) -> bool:
+    """Set up the Frank Energie sensor platform.
+    Deprecated for new development because Home Assistant encourages the use of config entries and UI-driven setup.
+    """
     _LOGGER.debug("Setting up Frank Energie sensor platform")
     timezone = hass.config.time_zone
     _LOGGER.info("Configured Time Zone: %s", timezone)
@@ -54,7 +61,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-class FrankEnergieComponent:
+class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
     """Class representing the Frank Energie component."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -94,11 +101,6 @@ class FrankEnergieComponent:
         if self.entry.unique_id is None or self.entry.unique_id == "frank_energie_component":
             self.hass.config_entries.async_update_entry(self.entry, unique_id="frank_energie")
 
-    def fix_update_unique_id(self) -> None:
-        """Update the unique ID of the config entry."""
-        if self.entry.unique_id is None or self.entry.unique_id == "frank_energie_component":
-            self.hass.config_entries.update_entry(self.entry, unique_id="frank_energie")
-
     async def _select_site_reference(self, coordinator: FrankEnergieCoordinator) -> None:
         """Select the site reference for the coordinator."""
         _LOGGER.debug("Selecting site reference for coordinator")
@@ -114,7 +116,9 @@ class FrankEnergieComponent:
 
             _LOGGER.debug("Site reference: %s, Title: %s", site_reference, title)
             # Update entry data and title using async_update_entry method
-            self.hass.config_entries.async_update_entry(self.entry, data={**self.entry.data, "site_reference": site_reference}, title=title)
+            self.hass.config_entries.async_update_entry(
+                self.entry, data={**self.entry.data, "site_reference": site_reference}, title=title
+            )
 
     async def _get_site_reference_and_title(self, coordinator: FrankEnergieCoordinator) -> tuple[str, str]:
         _LOGGER.debug("Getting site reference and title for coordinator")
