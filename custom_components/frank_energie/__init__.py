@@ -153,8 +153,7 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
         selected_site = delivery_sites[0]
 
         # Maak een titel op basis van de adresgegevens van de bezorgsite
-        title = f"{selected_site.address.street} {
-            selected_site.address.houseNumber}"
+        title = f"{selected_site.address.street} {selected_site.address.houseNumber}"
         if selected_site.address.houseNumberAddition:
             title += f" {selected_site.address.houseNumberAddition}"
 
