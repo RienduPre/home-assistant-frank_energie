@@ -70,7 +70,7 @@ DEFAULT_ROUND: Final[int] = 3  # Default display round value for prices
 
 
 # --- Device Response Data Class ---
-@ dataclass
+@dataclass
 class DeviceResponseEntry:
     """Data class describing a single response entry."""
 
