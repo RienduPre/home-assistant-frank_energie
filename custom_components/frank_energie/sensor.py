@@ -151,9 +151,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        value_fn=lambda data:
+        value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_with_tax
-        if data[DATA_ELECTRICITY].current_hour else None,
+            if data[DATA_ELECTRICITY].current_hour else None
+        ),
         attr_fn=lambda data: {
             "prices": data[DATA_ELECTRICITY].asdict("market_price_with_tax")
         }
@@ -165,9 +166,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        value_fn=lambda data:
+        value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_tax
-        if data[DATA_ELECTRICITY].current_hour else None,
+            if data[DATA_ELECTRICITY].current_hour else None
+        ),
         attr_fn=lambda data: {
             'prices': data[DATA_ELECTRICITY].asdict('market_price_tax')
         },
