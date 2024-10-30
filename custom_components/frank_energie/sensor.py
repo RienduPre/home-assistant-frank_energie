@@ -5,9 +5,12 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
-                                             SensorEntityDescription,
-                                             SensorStateClass)
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN
 from homeassistant.core import HassJob, HomeAssistant
@@ -19,11 +22,26 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
-                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_GAS,
-                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USER, DOMAIN, ICON,
-                    SERVICE_NAME_COSTS, SERVICE_NAME_PRICES, SERVICE_NAME_USER,
-                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
+from .const import (
+    API_CONF_URL,
+    ATTR_TIME,
+    ATTRIBUTION,
+    COMPONENT_TITLE,
+    CONF_COORDINATOR,
+    DATA_ELECTRICITY,
+    DATA_GAS,
+    DATA_INVOICES,
+    DATA_MONTH_SUMMARY,
+    DATA_USER,
+    DOMAIN,
+    ICON,
+    SERVICE_NAME_COSTS,
+    SERVICE_NAME_PRICES,
+    SERVICE_NAME_USER,
+    UNIT_ELECTRICITY,
+    UNIT_GAS,
+    VERSION,
+)
 from .coordinator import FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -1308,7 +1326,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         authenticated=True,
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: (
-            f"{data[DATA_USER].externalDetails.person.firstName} {data[DATA_USER].externalDetails.person.lastName}"
+            f"{data[DATA_USER].externalDetails.person.firstName} {
+                data[DATA_USER].externalDetails.person.lastName}"
             if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.person else None
         )
     ),
