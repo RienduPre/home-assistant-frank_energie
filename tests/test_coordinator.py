@@ -59,8 +59,10 @@ async def test_fetch_today_data(coordinator, mock_frank_energie):
     mock_frank_energie.user.return_value = User()
 
     # Perform the fetch
-    data = await coordinator._fetch_today_data(datetime.now(timezone.utc).date(), 
-                                                datetime.now(timezone.utc).date() + timedelta(days=1))
+    data = await coordinator._fetch_today_data(
+        datetime.now(timezone.utc).date(),
+        datetime.now(timezone.utc).date() + timedelta(days=1),
+    )
 
     # Assertions
     assert data is not None
