@@ -5,12 +5,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
+                                             SensorEntityDescription,
+                                             SensorStateClass)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN
 from homeassistant.core import HassJob, HomeAssistant
@@ -22,26 +19,11 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (
-    API_CONF_URL,
-    ATTR_TIME,
-    ATTRIBUTION,
-    COMPONENT_TITLE,
-    CONF_COORDINATOR,
-    DATA_ELECTRICITY,
-    DATA_GAS,
-    DATA_INVOICES,
-    DATA_MONTH_SUMMARY,
-    DATA_USER,
-    DOMAIN,
-    ICON,
-    SERVICE_NAME_COSTS,
-    SERVICE_NAME_PRICES,
-    SERVICE_NAME_USER,
-    UNIT_ELECTRICITY,
-    UNIT_GAS,
-    VERSION,
-)
+from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
+                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_GAS,
+                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USER, DOMAIN, ICON,
+                    SERVICE_NAME_COSTS, SERVICE_NAME_PRICES, SERVICE_NAME_USER,
+                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
 from .coordinator import FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -112,6 +94,26 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
     def is_authenticated(self) -> bool:
         """Check if the entity is authenticated."""
         return self.authenticated
+
+
+def format_user_name(data: dict) -> Optional[str]:
+    """
+    Formats the user's name from provided data by concatenating the first and last name.
+
+    Parameters:
+        data (dict): Dictionary containing user details, specifically `externalDetails` and `person`.
+
+    Returns:
+        Optional[str]: The formatted full name or None if data is missing required fields.
+    """
+    try:
+        external_details = data[DATA_USER].get('externalDetails')
+        if external_details and 'person' in external_details:
+            person = external_details['person']
+            return f"{person['firstName']} {person['lastName']}"
+    except KeyError as e:
+        _LOGGER.error("Missing data key: %s", e)
+    return None
 
 
 SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
@@ -1325,10 +1327,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         icon="mdi:form-textbox",
         authenticated=True,
         service_name=SERVICE_NAME_USER,
-        value_fn=lambda data: (
-            f"{data[DATA_USER].externalDetails.person.firstName} {data[DATA_USER].externalDetails.person.lastName}"
-            if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.person else None
-        )
+        value_fn=format_user_name
     ),
     FrankEnergieEntityDescription(
         key="phoneNumber",
