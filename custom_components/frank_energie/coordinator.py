@@ -82,12 +82,27 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[DeviceResponseEntry]):
         """Fetch today's data."""
 
         try:
-            _LOGGER.debug("Fetching Frank Energie data for today %s", self.entry.entry_id)
+            _LOGGER.debug(
+                "Fetching Frank Energie data for today %s", self.entry.entry_id)
             prices_today = await self.__fetch_prices_with_fallback(today, tomorrow)
 
-            data_month_summary = await self.api.month_summary(self.site_reference) if self.api.is_authenticated else None
-            data_invoices = await self.api.invoices(self.site_reference) if self.api.is_authenticated else None
-            data_user = await self.api.user(self.site_reference) if self.api.is_authenticated else None
+            data_month_summary = (
+                await self.api.month_summary(self.site_reference)
+                if self.api.is_authenticated
+                else None
+            )
+
+            data_invoices = (
+                await self.api.invoices(self.site_reference)
+                if self.api.is_authenticated
+                else None
+            )
+
+            data_user = (
+                await self.api.user(self.site_reference)
+                if self.api.is_authenticated
+                else None
+            )
             _LOGGER.debug("Data user: %s", data_user)
 
             return prices_today, data_month_summary, data_invoices, data_user
@@ -105,7 +120,8 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[DeviceResponseEntry]):
             raise UpdateFailed(ex) from ex
 
         except AuthException as ex:
-            _LOGGER.debug("Authentication tokens expired, trying to renew them (%s)", ex)
+            _LOGGER.debug(
+                "Authentication tokens expired, trying to renew them (%s)", ex)
             await self.__try_renew_token()
             raise UpdateFailed(ex) from ex
 
@@ -115,10 +131,12 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[DeviceResponseEntry]):
             _LOGGER.debug("Fetching Frank Energie data for tomorrow")
             return await self.__fetch_prices_with_fallback(tomorrow, tomorrow + timedelta(days=1))
         except UpdateFailed as err:
-            _LOGGER.debug("Error fetching Frank Energie data for tomorrow (%s)", err)
+            _LOGGER.debug(
+                "Error fetching Frank Energie data for tomorrow (%s)", err)
             return None
         except AuthException as ex:
-            _LOGGER.debug("Authentication tokens expired, trying to renew them (%s)", ex)
+            _LOGGER.debug(
+                "Authentication tokens expired, trying to renew them (%s)", ex)
             await self.__try_renew_token()
             raise UpdateFailed(ex) from ex
 
