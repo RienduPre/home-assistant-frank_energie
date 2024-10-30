@@ -348,9 +348,14 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].today_avg,
+        value_fn=lambda data: (
+            data[DATA_ELECTRICITY].today_avg
+        ),
         attr_fn=lambda data: {
-            'prices': data[DATA_ELECTRICITY].asdict('total', today_only=True, timezone="Europe/Amsterdam")}
+            'prices': data[DATA_ELECTRICITY].asdict(
+                'total', today_only=True, timezone="Europe/Amsterdam"
+            )
+        }
     ),
     FrankEnergieEntityDescription(
         key="elec_previoushour",
@@ -358,7 +363,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_previoushour",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_ELECTRICITY].previous_hour.total if data[DATA_ELECTRICITY].previous_hour else None,
+        value_fn=lambda data: (
+            data[DATA_ELECTRICITY].previous_hour.total
+            if data[DATA_ELECTRICITY].previous_hour else None
+        ),
         entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
@@ -367,7 +375,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_nexthour",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        value_fn=lambda data: data[DATA_ELECTRICITY].next_hour.total if data[DATA_ELECTRICITY].next_hour else None,
+        value_fn=lambda data: (
+            data[DATA_ELECTRICITY].next_hour.total
+            if data[DATA_ELECTRICITY].next_hour else None
+        ),
         entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
@@ -378,8 +389,16 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=0,
         icon="mdi:percent",
         value_fn=lambda data: (
-            100 / (data[DATA_ELECTRICITY].current_hour.market_price / data[DATA_ELECTRICITY].current_hour.market_price_tax))
-        if data[DATA_ELECTRICITY].current_hour and data[DATA_ELECTRICITY].current_hour.market_price != 0 and data[DATA_ELECTRICITY].current_hour.market_price_tax != 0 else 21,
+            100 / (
+                data[DATA_ELECTRICITY].current_hour.market_price /
+                data[DATA_ELECTRICITY].current_hour.market_price_tax
+            )
+            if (
+                data[DATA_ELECTRICITY].current_hour and
+                data[DATA_ELECTRICITY].current_hour.market_price != 0 and
+                data[DATA_ELECTRICITY].current_hour.market_price_tax != 0
+            ) else 21
+        ),
         entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
@@ -390,8 +409,16 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=0,
         icon="mdi:percent",
         value_fn=lambda data: (
-            100 / (data[DATA_GAS].current_hour.market_price / data[DATA_GAS].current_hour.market_price_tax))
-        if data[DATA_GAS].current_hour and data[DATA_GAS].current_hour.market_price != 0 and data[DATA_GAS].current_hour.market_price_tax != 0 else 21,
+            100 / (
+                data[DATA_GAS].current_hour.market_price /
+                data[DATA_GAS].current_hour.market_price_tax
+            )
+            if (
+                data[DATA_GAS].current_hour and
+                data[DATA_GAS].current_hour.market_price != 0 and
+                data[DATA_GAS].current_hour.market_price_tax != 0
+            ) else 21
+        ),
         entity_registry_enabled_default=True
     ),
     FrankEnergieEntityDescription(
