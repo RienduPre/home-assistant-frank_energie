@@ -7,21 +7,26 @@
 
 version: 2
 
+# Dependabot configuration for version updates
+
+version: 2
+
+updates:
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
-    # Workflow files stored in the default location of `.github/workflows`. (You don't need to specify `/.github/workflows` for `directory`. You can use `directory: "/"`.)
-    directory: "/"
+    directory: "/"  # Default location of .github/workflows
     schedule:
       interval: "weekly"
 
   # Maintain dependencies for npm
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/"  # Root directory
     schedule:
       interval: "weekly"
 
   # Maintain dependencies for pip
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/"  # Root directory
     schedule:
       interval: "weekly"
+
