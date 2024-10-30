@@ -94,8 +94,9 @@ async def test_aggregate_data(coordinator):
     data_invoices = Invoices()
     data_user = User()
 
-    aggregated_data = coordinator._aggregate_data(prices_today, prices_tomorrow, 
-                                                  data_month_summary, data_invoices, data_user)
+    aggregated_data = coordinator._aggregate_data(
+        prices_today, prices_tomorrow,
+        data_month_summary, data_invoices, data_user)
 
     # Assertions
     assert aggregated_data[DATA_ELECTRICITY] == 0.95  # 0.45 + 0.50
@@ -103,4 +104,3 @@ async def test_aggregate_data(coordinator):
     assert isinstance(aggregated_data[DATA_MONTH_SUMMARY], MonthSummary)
     assert isinstance(aggregated_data[DATA_INVOICES], Invoices)
     assert isinstance(aggregated_data[DATA_USER], User)
-
