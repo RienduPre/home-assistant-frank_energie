@@ -931,23 +931,24 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {"Number of hours": len(
             data[DATA_GAS].tomorrow_gas_after6am)}
     ),
-#    FrankEnergieEntityDescription(
-#        key="energy_consumption_sensor",
-#        name="Energy consumption (todo)",
-#        translation_key="",
-#        device_class=SensorDeviceClass.ENERGY,
-#        state_class=SensorStateClass.TOTAL,
-#        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-#        suggested_display_precision=1,
-#        authenticated=True,
-#        service_name=SERVICE_NAME_USAGE,
-#        entity_registry_enabled_default=False,
-#        value_fn=lambda data: async_get_energy_consumption_data(
-#            hass, data[USER_ID]),
-#        attr_fn=lambda data: {
-#            "Energy usage": async_get_energy_consumption_data(hass, data[USER_ID])
-#        },
-#    ),
+    # FrankEnergieEntityDescription(
+    #     key="energy_consumption_sensor",
+    #     name="Energy consumption (todo)",
+    #     translation_key="",
+    #     device_class=SensorDeviceClass.ENERGY,
+    #     state_class=SensorStateClass.TOTAL,
+    #     native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+    #     suggested_display_precision=1,
+    #     authenticated=True,
+    #     service_name=SERVICE_NAME_USAGE,
+    #     entity_registry_enabled_default=False,
+    #     value_fn=lambda data: async_get_energy_consumption_data(
+    #         hass, data[USER_ID]
+    #     ),
+    #     attr_fn=lambda data: {
+    #         "Energy usage": async_get_energy_consumption_data(hass, data[USER_ID])
+    #     },
+    # ),
     FrankEnergieEntityDescription(
         key="actual_costs_until_last_meter_reading_date",
         name="Actual monthly cost",
