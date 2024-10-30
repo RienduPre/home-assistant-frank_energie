@@ -2,7 +2,10 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timedelta, timezone
 from homeassistant.config_entries import ConfigEntry
-from custom_components.frank_energie.const import DATA_ELECTRICITY, DATA_GAS, DATA_MONTH_SUMMARY, DATA_INVOICES, DATA_USER
+from custom_components.frank_energie.const import (DATA_ELECTRICITY, DATA_GAS,
+                                                   DATA_INVOICES,
+                                                   DATA_MONTH_SUMMARY,
+                                                   DATA_USER)
 from custom_components.frank_energie.coordinator import FrankEnergieCoordinator
 from python_frank_energie import FrankEnergie
 from python_frank_energie.models import PriceData, MonthSummary, Invoices, User
@@ -13,10 +16,12 @@ mock_entry_data = {
     "access_token": "test_token",
 }
 
+
 @pytest.fixture
 def mock_frank_energie():
     """Create a mock FrankEnergie API instance."""
     return AsyncMock(spec=FrankEnergie)
+
 
 @pytest.fixture
 def mock_config_entry():
@@ -31,6 +36,7 @@ def mock_config_entry():
         entry_id="123",
         state="loaded",
     )
+
 
 @pytest.fixture
 def coordinator(mock_frank_energie, mock_config_entry):
