@@ -7,10 +7,6 @@
 
 version: 2
 
-# Dependabot configuration for version updates
-
-version: 2
-
 updates:
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
