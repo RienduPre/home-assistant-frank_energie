@@ -811,20 +811,36 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price upcoming (All-in)",
         translation_key="average_electricity_price_upcoming_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total
-        if data[DATA_ELECTRICITY].upcoming_avg else None,
         suggested_display_precision=3,
-        attr_fn=lambda data: {
-            "Number of hours": len(data[DATA_ELECTRICITY].upcoming_avg.values),
-            'average_electricity_price_upcoming_all_in': data[DATA_ELECTRICITY].upcoming_avg.total,
-            'average_electricity_market_price_including_tax_and_markup_upcoming': data[DATA_ELECTRICITY].upcoming_avg.market_price_with_tax_and_markup,
-            'average_electricity_market_markup_price': data[DATA_ELECTRICITY].upcoming_avg.market_markup_price,
-            'average_electricity_market_price_including_tax_upcoming': data[DATA_ELECTRICITY].upcoming_avg.market_price_with_tax,
-            'average_electricity_market_price_tax_upcoming': data[DATA_ELECTRICITY].upcoming_avg.marketPriceTax,
-            'average_electricity_market_price_upcoming': data[DATA_ELECTRICITY].upcoming_avg.marketPrice,
-            'upcoming_prices': data[DATA_ELECTRICITY].asdict('total', upcoming_only=True, timezone="Europe/Amsterdam"),
-        }
-        if data[DATA_ELECTRICITY].upcoming_avg else {},
+        value_fn=lambda data: (
+            data[DATA_ELECTRICITY].upcoming_avg.total
+            if data[DATA_ELECTRICITY].upcoming_avg else None
+        ),
+        attr_fn=lambda data: (
+            {
+                "Number of hours": len(data[DATA_ELECTRICITY].upcoming_avg.values),
+                'average_electricity_price_upcoming_all_in': data[DATA_ELECTRICITY].upcoming_avg.total,
+                'average_electricity_market_price_including_tax_and_markup_upcoming': (
+                    data[DATA_ELECTRICITY].upcoming_avg.market_price_with_tax_and_markup
+                ),
+                'average_electricity_market_markup_price': (
+                    data[DATA_ELECTRICITY].upcoming_avg.market_markup_price
+                ),
+                'average_electricity_market_price_including_tax_upcoming': (
+                    data[DATA_ELECTRICITY].upcoming_avg.market_price_with_tax
+                ),
+                'average_electricity_market_price_tax_upcoming': (
+                    data[DATA_ELECTRICITY].upcoming_avg.marketPriceTax
+                ),
+                'average_electricity_market_price_upcoming': (
+                    data[DATA_ELECTRICITY].upcoming_avg.marketPrice
+                ),
+                'upcoming_prices': data[DATA_ELECTRICITY].asdict(
+                    'total', upcoming_only=True, timezone="Europe/Amsterdam"
+                ),
+            }
+            if data[DATA_ELECTRICITY].upcoming_avg else {}
+        ),
     ),
     FrankEnergieEntityDescription(
         key="average_electricity_price_upcoming_market",
