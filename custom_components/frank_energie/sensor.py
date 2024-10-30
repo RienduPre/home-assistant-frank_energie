@@ -1308,8 +1308,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         authenticated=True,
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: (
-            f"{data[DATA_USER].externalDetails.person.firstName} {
-                data[DATA_USER].externalDetails.person.lastName}"
+            f"{data[DATA_USER].externalDetails.person.firstName} {data[DATA_USER].externalDetails.person.lastName}"
             if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.person else None
         )
     ),
