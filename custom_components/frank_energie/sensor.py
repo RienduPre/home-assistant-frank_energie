@@ -1183,13 +1183,16 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_year(
-        )
-        if data[DATA_INVOICES].allPeriodsInvoices
-        else None,
+        value_fn=lambda data: (
+            data[DATA_INVOICES].calculate_average_costs_per_year()
+            if data[DATA_INVOICES].allPeriodsInvoices
+            else None
+        ),
         attr_fn=lambda data: {
             'Total amount': sum(invoice.TotalAmount for invoice in data[DATA_INVOICES].allPeriodsInvoices),
-            'Number of years': len(data[DATA_INVOICES].get_all_invoices_dict_per_year()), 'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year()},
+            'Number of years': len(data[DATA_INVOICES].get_all_invoices_dict_per_year()),
+            'Invoices': data[DATA_INVOICES].get_all_invoices_dict_per_year(),
+        },
     ),
     FrankEnergieEntityDescription(
         key="average_costs_per_year_corrected",
@@ -1624,7 +1627,8 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
         # Set defaults or exceptions for non default sensors.
         # self._attr_device_class = description.device_class or self._attr_device_class
         # self._attr_state_class = description.state_class or self._attr_state_class
-        # self._attr_suggested_display_precision = description.suggested_display_precision or self._attr_suggested_display_precision
+        # self._attr_suggested_display_precision = description.suggested_display_precision
+        # or self._attr_suggested_display_precision
         self._attr_icon = description.icon or self._attr_icon
 
         self._update_job = HassJob(self._handle_scheduled_update)
