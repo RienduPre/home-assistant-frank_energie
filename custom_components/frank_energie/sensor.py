@@ -5,43 +5,25 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
+                                             SensorEntityDescription,
+                                             SensorStateClass)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (
-    API_CONF_URL,
-    ATTR_TIME,
-    ATTRIBUTION,
-    COMPONENT_TITLE,
-    CONF_COORDINATOR,
-    DATA_ELECTRICITY,
-    DATA_GAS,
-    DATA_INVOICES,
-    DATA_MONTH_SUMMARY,
-    DATA_USER,
-    DOMAIN,
-    ICON,
-    SERVICE_NAME_COSTS,
-    SERVICE_NAME_PRICES,
-    SERVICE_NAME_USER,
-    UNIT_ELECTRICITY,
-    UNIT_GAS,
-    VERSION,
-)
+from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
+                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_GAS,
+                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USER, DOMAIN, ICON,
+                    SERVICE_NAME_COSTS, SERVICE_NAME_PRICES, SERVICE_NAME_USER,
+                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
 from .coordinator import FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,14 +43,10 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
         default_factory=lambda: {}  # type: ignore
     )
 
-    # def attr_fn(self, data: dict) -> dict[str, Union[StateType, list]]:
-    #    """Set attributes based on data."""
-    #    return {}
-
     def __init__(
         self,
-        key: str = "no_key",
-        name: Optional[str] = None,
+        key: str,
+        name: str,
         device_class: Optional[str] = None,
         state_class: Optional[str] = None,
         native_unit_of_measurement: Optional[str] = None,
@@ -76,9 +54,11 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
         authenticated: Optional[bool] = None,
         service_name: Union[str, None] = None,
         value_fn: Optional[Callable[[dict], StateType]] = None,
-        attr_fn: Optional[Callable[[dict], dict[str, Union[StateType, list]]]] = None,
+        attr_fn: Optional[Callable[[dict],
+                                   dict[str, Union[StateType, list]]]] = None,
         entity_registry_enabled_default: bool = True,
         entity_registry_visible_default: bool = True,
+        entity_category: Optional[Union[str, EntityCategory]] = None,
         translation_key: Optional[str] = None,
         icon: Optional[str] = None,
     ):
@@ -90,11 +70,11 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
             native_unit_of_measurement=native_unit_of_measurement,
             suggested_display_precision=suggested_display_precision,
             translation_key=translation_key,
+            entity_category=entity_category
         )
-
-        self.authenticated = authenticated if authenticated is not None else False
-        self.service_name = service_name if service_name is not None else SERVICE_NAME_PRICES
-        self.value_fn = value_fn if value_fn is not None else STATE_UNKNOWN
+        self.authenticated = authenticated or False
+        self.service_name = service_name or SERVICE_NAME_PRICES
+        self.value_fn = value_fn or STATE_UNKNOWN
         self.attr_fn = attr_fn if attr_fn is not None else lambda data: {}
         self.entity_registry_enabled_default = entity_registry_enabled_default
         self.entity_registry_visible_default = entity_registry_visible_default
@@ -138,7 +118,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
@@ -152,8 +131,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_with_tax
+        value_fn=lambda data:
+            data[DATA_ELECTRICITY].current_hour.market_price_with_tax
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
             "prices": data[DATA_ELECTRICITY].asdict("market_price_with_tax")
@@ -166,8 +145,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_tax
+        value_fn=lambda data:
+            data[DATA_ELECTRICITY].current_hour.market_price_tax
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
             'prices': data[DATA_ELECTRICITY].asdict('market_price_tax')
@@ -181,8 +160,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
+        value_fn=lambda data:
+            data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
         if data[DATA_ELECTRICITY].current_hour else None,
         entity_registry_enabled_default=True
     ),
@@ -193,8 +172,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=5,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.energy_tax_price
+        value_fn=lambda data:
+            data[DATA_ELECTRICITY].current_hour.energy_tax_price
         if data[DATA_ELECTRICITY].current_hour else None,
         entity_registry_enabled_default=True
     ),
@@ -205,7 +184,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=6,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
             + data[DATA_ELECTRICITY].current_hour.energy_tax_price  # noqa: W503
@@ -219,7 +197,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=6,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_with_tax
         ) if data.get(DATA_ELECTRICITY) and data[DATA_ELECTRICITY].current_hour else None,
@@ -231,7 +208,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_markup",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.total
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("total")}
@@ -242,7 +219,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_market",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("market_price")}
@@ -253,7 +230,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tax",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price_with_tax
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {
@@ -266,7 +243,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tax_vat",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price_tax
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -277,7 +254,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_sourcing",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.sourcing_markup_price
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -288,7 +265,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tax_only",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].current_hour.energy_tax_price
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -299,7 +276,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_min",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_GAS].today_min.total
         if data[DATA_GAS].today_min else None,
         attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_min.date_from}
@@ -311,7 +288,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data[DATA_GAS].today_max.total
         if data[DATA_GAS].today_max else None,
         attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_max.date_from}
@@ -378,9 +354,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_market_percent_tax",
         native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=0,
-        device_class='',
         icon="mdi:percent",
-        value_fn=lambda data: (100 / (data[DATA_ELECTRICITY].current_hour.market_price / data[DATA_ELECTRICITY].current_hour.market_price_tax))
+        value_fn=lambda data: (
+            100 / (data[DATA_ELECTRICITY].current_hour.market_price / data[DATA_ELECTRICITY].current_hour.market_price_tax))
         if data[DATA_ELECTRICITY].current_hour and data[DATA_ELECTRICITY].current_hour.market_price != 0 and data[DATA_ELECTRICITY].current_hour.market_price_tax != 0 else 21,
         entity_registry_enabled_default=True
     ),
@@ -390,9 +366,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_market_percent_tax",
         native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=0,
-        device_class='',
         icon="mdi:percent",
-        value_fn=lambda data: (100 / (data[DATA_GAS].current_hour.market_price / data[DATA_GAS].current_hour.market_price_tax))
+        value_fn=lambda data: (
+            100 / (data[DATA_GAS].current_hour.market_price / data[DATA_GAS].current_hour.market_price_tax))
         if data[DATA_GAS].current_hour and data[DATA_GAS].current_hour.market_price != 0 and data[DATA_GAS].current_hour.market_price_tax != 0 else 21,
         entity_registry_enabled_default=True
     ),
@@ -500,7 +476,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_tomorrow_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price
         # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.total
@@ -603,7 +578,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         icon="mdi:numeric-0-box-multiple",
         suggested_display_precision=0,
         state_class=SensorStateClass.MEASUREMENT,
-        device_class="None",
         value_fn=lambda data: data[DATA_ELECTRICITY].length,
         entity_registry_enabled_default=True,
         entity_registry_visible_default=True
@@ -615,7 +589,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         icon="mdi:numeric-0-box-multiple",
         suggested_display_precision=0,
         state_class=SensorStateClass.MEASUREMENT,
-        device_class="None",
         value_fn=lambda data: data[DATA_GAS].length,
         entity_registry_enabled_default=True,
         entity_registry_visible_default=True
@@ -709,6 +682,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average gas price today (All-in)",
         translation_key="gas_today_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
+        suggested_display_precision=3,
         value_fn=lambda data: data[DATA_GAS].today_prices_total
     ),
     FrankEnergieEntityDescription(
@@ -788,8 +762,6 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price upcoming (All-in)",
         translation_key="average_electricity_price_upcoming_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total
         if data[DATA_ELECTRICITY].upcoming_avg else None,
         suggested_display_precision=3,
@@ -1130,7 +1102,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month()
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
+        )
         if data[DATA_INVOICES].allPeriodsInvoices
         else None
     ),
@@ -1144,7 +1117,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_year()
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_year(
+        )
         if data[DATA_INVOICES].allPeriodsInvoices
         else None,
         attr_fn=lambda data: {
@@ -1161,7 +1135,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month() * 12
+        value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
+        ) * 12
         if data[DATA_INVOICES].allPeriodsInvoices
         else None,
         attr_fn=lambda data: {
@@ -1208,7 +1183,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
-        value_fn=lambda data: data[DATA_INVOICES].calculate_expected_costs_this_year()
+        value_fn=lambda data: data[DATA_INVOICES].calculate_expected_costs_this_year(
+        )
         if data[DATA_INVOICES].allPeriodsInvoices
         else None
     ),
@@ -1276,7 +1252,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_USER].status
         else None,
         attr_fn=lambda data: {
-            'Connections status': data[DATA_USER].connectionsStatus}
+            'Connections status': next((connection['status']
+                                        for connection in data[DATA_USER].connections
+                                        if connection.get('status')), None
+                                       )
+        }
     ),
     FrankEnergieEntityDescription(
         key="propositionType",
@@ -1301,14 +1281,117 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         else None
     ),
     FrankEnergieEntityDescription(
+        key="bankAccountNumber",
+        name="Bankaccount Number",
+        translation_key="bank_account_number",
+        icon="mdi:bank",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: data[DATA_USER].externalDetails.debtor.bankAccountNumber
+        if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.debtor else None
+    ),
+    FrankEnergieEntityDescription(
+        key="preferredAutomaticCollectionDay",
+        name="Preferred Automatic Collection Day",
+        translation_key="preferred_automatic_collection_day",
+        icon="mdi:bank",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: data[DATA_USER].externalDetails.debtor.preferredAutomaticCollectionDay
+        if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.debtor else None
+    ),
+    FrankEnergieEntityDescription(
+        key="fullName",
+        name="Full Name",
+        translation_key="full_name",
+        icon="mdi:form-textbox",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: (
+            f"{data[DATA_USER].externalDetails.person.firstName} {
+                data[DATA_USER].externalDetails.person.lastName}"
+            if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.person else None
+        )
+    ),
+    FrankEnergieEntityDescription(
+        key="phoneNumber",
+        name="Phonenumber",
+        translation_key="phone_number",
+        icon="mdi:phone",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: (
+            data[DATA_USER].externalDetails.contact.phoneNumber
+            if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.contact else None
+        )
+    ),
+    FrankEnergieEntityDescription(
         key="segments",
         name="Segments",
         translation_key="segments",
         icon="mdi:segment",
         authenticated=True,
         service_name=SERVICE_NAME_USER,
-        value_fn=lambda data: data[DATA_USER].segments
+        value_fn=lambda data: ', '.join(
+            data[DATA_USER].segments) if data[DATA_USER].segments else None
         if data[DATA_USER].segments
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="gridOperator",
+        name="Gridoperator",
+        translation_key="grid_operator",
+        icon="mdi:transmission-tower",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: next(
+            (connection['externalDetails']['gridOperator']
+                for connection in data[DATA_USER].connections
+                if connection.get('externalDetails') and connection['externalDetails'].get('gridOperator')), None
+        )
+        if data[DATA_USER].connections
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="EAN",
+        name="EAN (Energy Account Number)",
+        translation_key="EAN",
+        icon="mdi:meter-electric",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: next(
+            (connection['EAN'] for connection in data[DATA_USER].connections
+                if connection.get('EAN')), None
+        )
+        if data[DATA_USER].connections
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="meterType",
+        name="Meter Type",
+        translation_key="meter_type",
+        icon="mdi:meter-electric",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: next(
+            (connection['meterType'] for connection in data[DATA_USER].connections
+                if connection.get('meterType')), None
+        )
+        if data[DATA_USER].connections
+        else None
+    ),
+    FrankEnergieEntityDescription(
+        key="contractStatus",
+        name="Contract Status",
+        translation_key="contract_status",
+        icon="mdi:file-document-outline",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: next(
+            (connection['contractStatus'] for connection in data[DATA_USER].connections
+                if connection.get('contractStatus')), None
+        )
+        if data[DATA_USER].connections
         else None
     ),
     FrankEnergieEntityDescription(
@@ -1330,6 +1413,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         icon="mdi:calendar-clock",
         authenticated=True,
         service_name=SERVICE_NAME_USER,
+        entity_registry_enabled_default=False,
         value_fn=lambda data: dt.parse_date(
             data[DATA_USER].deliveryEndDate).strftime(FORMAT_DATE)
         if data[DATA_USER].deliveryEndDate
@@ -1396,7 +1480,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="rewardPayoutPreference",
         name="Reward payout preference",
         translation_key="reward_payout_preference",
-        icon="mdi:numeric",
+        icon="mdi:trophy",
         authenticated=True,
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: data[DATA_USER].UserSettings.get(
@@ -1414,28 +1498,25 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         value_fn=lambda data: data[DATA_USER].PushNotificationPriceAlerts[0]["isEnabled"]
         if data[DATA_USER].PushNotificationPriceAlerts
         else None
+    ),
+    FrankEnergieEntityDescription(
+        key="smartChargingisActivated",
+        name="Smart Charging Activated",
+        translation_key="smartcharging_isactivated",
+        icon="mdi:ev-station",
+        authenticated=True,
+        service_name=SERVICE_NAME_USER,
+        value_fn=lambda data: data[DATA_USER].smartCharging.get('isActivated')
+        if data[DATA_USER].smartCharging
+        else None,
+        attr_fn=lambda data: {
+            'Provider': data[DATA_USER].smartCharging.get('provider'),
+            'Available In Country': data[DATA_USER].smartCharging.get('isAvailableInCountry')
+            if data[DATA_USER].smartCharging
+            else []
+        }
     )
 )
-
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Set up Frank Energie sensor entries."""
-    frank_coordinator = hass.data[DOMAIN][config_entry.entry_id][CONF_COORDINATOR]
-    # timezone = hass.config.time_zone
-    # Add an entity for each sensor type, when authenticated is True,
-    # only add the entity if the user is authenticated
-    async_add_entities(
-        [
-            FrankEnergieSensor(frank_coordinator, description, config_entry)
-            for description in SENSOR_TYPES
-            if not description.authenticated or frank_coordinator.api.is_authenticated
-        ],
-        True,
-    )
 
 
 class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
@@ -1498,7 +1579,8 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
             # No data available
             self._attr_native_value = None
         except ZeroDivisionError as e:
-            _LOGGER.error("Division by zero error in FrankEnergieSensor: %s", e)
+            _LOGGER.error(
+                "Division by zero error in FrankEnergieSensor: %s", e)
             self._attr_native_value = None
 #        except Exception as e:
 #            _LOGGER.error("Error updating FrankEnergieSensor: %s", e)
@@ -1528,9 +1610,34 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        return self.entity_description.attr_fn(self.coordinator.data)
+        """Return the cached state attributes, if available."""
+        if self.coordinator.data:
+            return self.entity_description.attr_fn(self.coordinator.data)
+        return {}
 
     @property
     def available(self) -> bool:
         return super().available and self.native_value is not None
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up Frank Energie sensor entries."""
+    _LOGGER.debug("Setting up Frank Energie sensors for entry: %s",
+                  config_entry.entry_id)
+
+    coordinator: FrankEnergieCoordinator = hass.data[DOMAIN][config_entry.entry_id][CONF_COORDINATOR]
+    # timezone = hass.config.time_zone
+    # Add an entity for each sensor type, when authenticated is True,
+    # only add the entity if the user is authenticated
+    async_add_entities(
+        [
+            FrankEnergieSensor(coordinator, description, config_entry)
+            for description in SENSOR_TYPES
+            if not description.authenticated or coordinator.api.is_authenticated
+        ],
+        True,
+    )
