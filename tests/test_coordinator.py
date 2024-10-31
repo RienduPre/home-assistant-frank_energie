@@ -42,6 +42,9 @@ def mock_config_entry():
         source="user",
         entry_id="123",
         state="loaded",
+        discovery_keys=None,  # or a list of keys
+        minor_version=1,      # Set this to the appropriate minor version
+        unique_id="test_unique_id"  # Ensure this is unique
     )
 
 
