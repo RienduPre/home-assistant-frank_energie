@@ -65,14 +65,12 @@ async def test_fetch_today_data(coordinator, mock_frank_energie):
     mock_frank_energie.invoices.return_value = Invoices()
     mock_frank_energie.user.return_value = User()
 
-  
     # Perform the fetch
     data = await coordinator._fetch_today_data(
         datetime.now(timezone.utc).date(),
         datetime.now(timezone.utc).date() + timedelta(days=1),
     )
 
-  
     # Assertions
     assert data is not None
     assert data[DATA_ELECTRICITY] == 0.45
@@ -112,7 +110,6 @@ async def test_aggregate_data(coordinator):
         data_month_summary, data_invoices, data_user
     )
 
-  
     # Assertions
     assert aggregated_data[DATA_ELECTRICITY] == 0.95  # 0.45 + 0.50
     assert aggregated_data[DATA_GAS] == 0.19  # 0.09 + 0.10
