@@ -25,6 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install git+https://github.com/HiDiHo01/python_frank_energie.git
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Register flake8 problem matcher
         run: |
@@ -36,5 +37,7 @@ jobs:
           # exit-zero treats all errors as warnings.
           flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
       - name: Test with pytest
+        env:
+          PYTHONPATH: ${{ github.workspace }}/custom_components/frank_energie
         run: |
-          pytest
+          pytest -v --capture=no
