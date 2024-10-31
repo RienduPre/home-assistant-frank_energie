@@ -7,6 +7,7 @@ from custom_components.frank_energie.const import (DATA_ELECTRICITY, DATA_GAS,
                                                    DATA_MONTH_SUMMARY,
                                                    DATA_USER)
 from custom_components.frank_energie.coordinator import FrankEnergieCoordinator
+from custom_components.frank_energie.exceptions import NoSuitableSitesFoundError
 from python_frank_energie import FrankEnergie
 from python_frank_energie.models import PriceData, MonthSummary, Invoices, User
 
