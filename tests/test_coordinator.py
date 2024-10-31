@@ -17,15 +17,18 @@ mock_entry_data = {
     "access_token": "test_token",
 }
 
+
 def test_no_suitable_sites_found():
     """Test case for NoSuitableSitesFoundError."""
     with pytest.raises(NoSuitableSitesFoundError):
         raise NoSuitableSitesFoundError("No suitable sites found.")
 
+
 @pytest.fixture
 def mock_frank_energie():
     """Create a mock FrankEnergie API instance."""
     return AsyncMock(spec=FrankEnergie)
+
 
 @pytest.fixture
 def mock_config_entry():
@@ -41,6 +44,7 @@ def mock_config_entry():
         state="loaded",
     )
 
+
 @pytest.fixture
 def coordinator(mock_frank_energie, mock_config_entry):
     """Create an instance of FrankEnergieCoordinator."""
@@ -49,6 +53,7 @@ def coordinator(mock_frank_energie, mock_config_entry):
         entry=mock_config_entry,
         api=mock_frank_energie,
     )
+
 
 @pytest.mark.asyncio
 async def test_fetch_today_data(coordinator, mock_frank_energie):
@@ -60,12 +65,14 @@ async def test_fetch_today_data(coordinator, mock_frank_energie):
     mock_frank_energie.invoices.return_value = Invoices()
     mock_frank_energie.user.return_value = User()
 
+  
     # Perform the fetch
     data = await coordinator._fetch_today_data(
         datetime.now(timezone.utc).date(),
         datetime.now(timezone.utc).date() + timedelta(days=1),
     )
 
+  
     # Assertions
     assert data is not None
     assert data[DATA_ELECTRICITY] == 0.45
@@ -73,6 +80,7 @@ async def test_fetch_today_data(coordinator, mock_frank_energie):
     assert isinstance(data[DATA_MONTH_SUMMARY], MonthSummary)
     assert isinstance(data[DATA_INVOICES], Invoices)
     assert isinstance(data[DATA_USER], User)
+
 
 @pytest.mark.asyncio
 async def test_renew_token(coordinator, mock_frank_energie):
@@ -87,7 +95,8 @@ async def test_renew_token(coordinator, mock_frank_energie):
 
     # Verify that the entry data was updated with new tokens
     assert coordinator.entry.data['access_token'] == 'new_token'
-    assert coordinator.entry.data['refresh_token'] == 'new_refresh_token'  # Check if refresh token is also updated if needed
+    assert coordinator.entry.data['refresh_token'] == 'new_refresh_token'
+
 
 @pytest.mark.asyncio
 async def test_aggregate_data(coordinator):
@@ -103,6 +112,7 @@ async def test_aggregate_data(coordinator):
         data_month_summary, data_invoices, data_user
     )
 
+  
     # Assertions
     assert aggregated_data[DATA_ELECTRICITY] == 0.95  # 0.45 + 0.50
     assert aggregated_data[DATA_GAS] == 0.19  # 0.09 + 0.10
