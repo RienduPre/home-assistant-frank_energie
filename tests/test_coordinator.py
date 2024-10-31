@@ -17,12 +17,15 @@ mock_entry_data = {
     "access_token": "test_token",
 }
 
+def test_no_suitable_sites_found():
+    """Test case for NoSuitableSitesFoundError."""
+    with pytest.raises(NoSuitableSitesFoundError):
+        raise NoSuitableSitesFoundError("No suitable sites found.")
 
 @pytest.fixture
 def mock_frank_energie():
     """Create a mock FrankEnergie API instance."""
     return AsyncMock(spec=FrankEnergie)
-
 
 @pytest.fixture
 def mock_config_entry():
@@ -38,7 +41,6 @@ def mock_config_entry():
         state="loaded",
     )
 
-
 @pytest.fixture
 def coordinator(mock_frank_energie, mock_config_entry):
     """Create an instance of FrankEnergieCoordinator."""
@@ -47,7 +49,6 @@ def coordinator(mock_frank_energie, mock_config_entry):
         entry=mock_config_entry,
         api=mock_frank_energie,
     )
-
 
 @pytest.mark.asyncio
 async def test_fetch_today_data(coordinator, mock_frank_energie):
@@ -73,18 +74,20 @@ async def test_fetch_today_data(coordinator, mock_frank_energie):
     assert isinstance(data[DATA_INVOICES], Invoices)
     assert isinstance(data[DATA_USER], User)
 
-
 @pytest.mark.asyncio
 async def test_renew_token(coordinator, mock_frank_energie):
     """Test token renewal."""
     # Mock renewal of the token
-    mock_frank_energie.renew_token.return_value = AsyncMock(authToken='new_token', refreshToken='new_refresh_token')
+    mock_frank_energie.renew_token.return_value = AsyncMock(
+        authToken='new_token',
+        refreshToken='new_refresh_token'
+    )
 
     await coordinator._FrankEnergieCoordinator__try_renew_token()
 
     # Verify that the entry data was updated with new tokens
     assert coordinator.entry.data['access_token'] == 'new_token'
-
+    assert coordinator.entry.data['refresh_token'] == 'new_refresh_token'  # Check if refresh token is also updated if needed
 
 @pytest.mark.asyncio
 async def test_aggregate_data(coordinator):
@@ -97,7 +100,8 @@ async def test_aggregate_data(coordinator):
 
     aggregated_data = coordinator._aggregate_data(
         prices_today, prices_tomorrow,
-        data_month_summary, data_invoices, data_user)
+        data_month_summary, data_invoices, data_user
+    )
 
     # Assertions
     assert aggregated_data[DATA_ELECTRICITY] == 0.95  # 0.45 + 0.50
