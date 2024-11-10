@@ -9,7 +9,7 @@
     "issue_tracker": "https://github.com/HiDiHo01/home-assistant-frank_energie/issues",
     "name": "Frank Energie",
     "requirements": [
-        "python-frank-energie==6.0.1"
+        "python-frank-energie==2024.11.10"
     ],
     "version": "2024.11.10"
 }
