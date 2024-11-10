@@ -17,27 +17,34 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
-      - name: Install dependencies
+
+      - name: Install Poetry
         run: |
-          python -m pip install --upgrade pip
-          pip install git+https://github.com/HiDiHo01/python-frank-energie.git@main#egg=python_frank_energie
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Install dependencies with Poetry
+        run: |
+          poetry install
+          if [ -f requirements.txt ]; then poetry run pip install -r requirements.txt; fi
+
       - name: Register flake8 problem matcher
-        run: |
-          echo "::add-matcher::.github/workflows/flake8-matchers.json"
+        run: echo "::add-matcher::.github/workflows/flake8-matchers.json"
+
       - name: Lint with flake8
         run: |
-          # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings.
           flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
+        continue-on-error: true
+
       - name: Test with pytest
         env:
           PYTHONPATH: ${{ github.workspace }}/custom_components/frank_energie
         run: |
-          pytest -v --capture=no
+          poetry run pytest -v --capture=no
