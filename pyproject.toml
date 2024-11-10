@@ -1,0 +1,3 @@
+[tool.poetry.dependencies]
+python = "^3.13"
+python-frank-energie = { git = "https://github.com/HiDiHo01/python-frank-energie.git", rev = "main" }
