@@ -11,5 +11,5 @@
     "requirements": [
         "python-frank-energie==6.0.1"
     ],
-    "version": "3.0.1"
+    "version": "2024.11.10"
 }
