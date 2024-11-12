@@ -8,6 +8,10 @@
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/HiDiHo01/home-assistant-frank_energie/issues",
     "name": "Frank Energie",
+    "quality_scale": "silver",
+    "supported_brands": [
+        "Frank Energie"
+    ],
     "requirements": [
         "git+https://github.com/HiDiHo01/python-frank-energie.git"
     ],
