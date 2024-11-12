@@ -1376,7 +1376,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         icon="mdi:form-textbox",
         authenticated=True,
         service_name=SERVICE_NAME_USER,
-        value_fn=format_user_name
+        value_fn=lambda data: (
+            f"{data[DATA_USER].externalDetails.person.firstName} {data[DATA_USER].externalDetails.person.lastName}"
+            if data[DATA_USER].externalDetails and data[DATA_USER].externalDetails.person else None
+        )
     ),
     FrankEnergieEntityDescription(
         key="phoneNumber",
