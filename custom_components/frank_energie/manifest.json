@@ -15,5 +15,5 @@
     "requirements": [
         "git+https://github.com/HiDiHo01/python-frank-energie.git"
     ],
-    "version": "2024.11.10"
+    "version": "2024.11.22"
 }
