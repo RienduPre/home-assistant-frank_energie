@@ -1,19 +1,19 @@
 {
     "codeowners": [
-        "@HiDiHo01"
+        "@RienduPre"
     ],
     "config_flow": true,
-    "documentation": "https://github.com/HiDiHo01/home-assistant-frank_energie",
+    "documentation": "https://github.com/RienduPre/home-assistant-frank_energie",
     "domain": "frank_energie",
     "iot_class": "cloud_polling",
-    "issue_tracker": "https://github.com/HiDiHo01/home-assistant-frank_energie/issues",
+    "issue_tracker": "https://github.com/RienduPre/home-assistant-frank_energie/issues",
     "name": "Frank Energie",
     "quality_scale": "silver",
     "supported_brands": [
         "Frank Energie"
     ],
     "requirements": [
-        "git+https://github.com/HiDiHo01/python-frank-energie.git"
+        "git+https://github.com/RienduPre/python-frank-energie.git"
     ],
-    "version": "2024.11.22"
+    "version": "2024.11.1"
 }
