@@ -15,5 +15,5 @@
     "requirements": [
         "git+https://github.com/RienduPre/python-frank-energie.git"
     ],
-    "version": "2024.11.1"
+    "version": "2024.11.2"
 }
