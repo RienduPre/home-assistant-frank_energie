@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "home-assistant-frank_energie"
-version = "2024.11.22"  # Initial version
+version = "2025.1.6"
 description = "A custom Home Assistant integration for Frank Energie."
 authors = ["HiDiHo <hidiho@gmail.com>"]  # Replace with your info
 
