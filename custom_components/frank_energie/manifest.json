@@ -13,7 +13,7 @@
         "Frank Energie"
     ],
     "requirements": [
-        "git+https://github.com/HiDiHo01/python-frank-energie.git"
+        "git+https://github.com/HiDiHo01/python-frank-energie.git@v2025.1.6"
     ],
-    "version": "2024.11.22"
+    "version": "2025.1.6"
 }
