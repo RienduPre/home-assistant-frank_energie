@@ -13,8 +13,7 @@ from homeassistant.const import CONF_ACCESS_TOKEN, CONF_TOKEN  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
 from homeassistant.helpers.update_coordinator import \
-    DataUpdateCoordinator  # type: ignore
-from homeassistant.helpers.update_coordinator import UpdateFailed
+    DataUpdateCoordinator, UpdateFailed
 from python_frank_energie import FrankEnergie
 from python_frank_energie.exceptions import AuthException, RequestException
 from python_frank_energie.models import (Invoices, MarketPrices, MonthSummary,
@@ -215,8 +214,9 @@ async def run_hourly(start_time: datetime, end_time: datetime, interval: timedel
         now = datetime.now()
         if start_time <= now <= end_time:
             await method()
+        else:
+            break  # Add this line to break the loop if the current time is outside the specified range
         await asyncio.sleep(interval.total_seconds())
-#         await asyncio.sleep(interval)
 
 
 async def hourly_refresh(coordinator: FrankEnergieCoordinator) -> None:
