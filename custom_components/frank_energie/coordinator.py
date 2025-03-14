@@ -44,7 +44,7 @@ class FrankEnergieData(TypedDict):
     """Optional user data."""
 
 
-class FrankEnergieCoordinator(DataUpdateCoordinator[DeviceResponseEntry]):
+class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
     """ Get the latest data and update the states. """
 
     def __init__(
