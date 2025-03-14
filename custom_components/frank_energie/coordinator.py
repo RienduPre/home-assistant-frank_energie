@@ -20,7 +20,7 @@ from python_frank_energie.models import (Invoices, MarketPrices, MonthSummary,
                                          PriceData, User)
 
 from .const import (_LOGGER, DATA_ELECTRICITY, DATA_GAS, DATA_INVOICES,
-                    DATA_MONTH_SUMMARY, DATA_USER, DeviceResponseEntry)
+                    DATA_MONTH_SUMMARY, DATA_USER)
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
