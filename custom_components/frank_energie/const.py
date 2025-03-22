@@ -5,19 +5,18 @@ Constants used in the Frank Energie integration.
 
 import logging
 from dataclasses import dataclass
-from typing import Final, Optional
+from typing import Any, Final, Optional
 
-from homeassistant.const import (CURRENCY_EURO, UnitOfEnergy,  # type: ignore
-                                 UnitOfVolume)
+from homeassistant.const import CURRENCY_EURO, UnitOfEnergy, UnitOfVolume
 from python_frank_energie.models import (DeliverySite, Invoices, MarketPrices,
-                                         MonthSummary, User)
+                                         MonthSummary, User, UserSites)
 
 # --- Logger Setup ---
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # --- Domain Information ---
 DOMAIN: Final[str] = "frank_energie"
-VERSION: Final[str] = "2025.1.6"
+VERSION: Final[str] = "2025.3.22"
 ATTRIBUTION: Final[str] = "Data provided by Frank Energie"
 UNIQUE_ID: Final[str] = "frank_energie"
 
@@ -44,7 +43,10 @@ DATA_GAS: Final[str] = "gas"
 DATA_MONTH_SUMMARY: Final[str] = "month_summary"
 DATA_INVOICES: Final[str] = "invoices"
 DATA_USER: Final[str] = "user"
+DATA_USER_SITES: Final[str] = "user_sites"
 DATA_DELIVERY_SITE: Final[str] = "delivery_site"
+DATA_BATTERIES: Final[str] = "smart_batteries"
+DATA_BATTERY_SESSIONS: Final[str] = "smart_battery_sessions"
 
 # --- Attribute Constants ---
 ATTR_TIME: Final[str] = "from_time"
@@ -64,12 +66,15 @@ SERVICE_NAME_ACTIVE_DELIVERY_SITE: Final[str] = "Active_Delivery_Site"
 SERVICE_NAME_USAGE: Final[str] = "Usage"
 SERVICE_NAME_ELEC_CONN: Final[str] = "Electricity connection"
 SERVICE_NAME_GAS_CONN: Final[str] = "Gas connection"
+SERVICE_NAME_BATTERIES: Final[str] = "Smart Batteries"
+SERVICE_NAME_BATTERY_SESSIONS: Final[str] = "Smart Battery Sessions"
 
 # --- Display Constants ---
 DEFAULT_ROUND: Final[int] = 3  # Default display round value for prices
 
-
 # --- Device Response Data Class ---
+
+
 @dataclass
 class DeviceResponseEntry:
     """Data class describing a single response entry."""
@@ -89,9 +94,18 @@ class DeviceResponseEntry:
     # User information (if available)
     user: Optional[User] = None
 
-    # Delivery site details (if available)
+    # User Sites information (if available. this replaces delivery site)
+    user_sites: Optional[UserSites] = None
+
+    # Delivery site details (if available) (This is replaced by user_sites, shouild be removed)
     delivery_site: Optional[DeliverySite] = None
+
+    # Smart battery details (if available)
+    smart_batteries: Optional[list[Any]] = None
+
+    # Smart battery session details (if available)
+    smart_battery_sessions: Optional[list[Any]] = None
 
 
 # Log loading of constants (move to init.py for better practice)
-_LOGGER.info("Constants loaded for %s", DOMAIN)
+_LOGGER.debug("Constants loaded for %s", DOMAIN)
