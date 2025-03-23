@@ -9,7 +9,8 @@ from typing import Any, Final, Optional
 
 from homeassistant.const import CURRENCY_EURO, UnitOfEnergy, UnitOfVolume
 from python_frank_energie.models import (DeliverySite, Invoices, MarketPrices,
-                                         MonthSummary, User, UserSites)
+                                         MonthSummary, PeriodUsageAndCosts,
+                                         User, UserSites)
 
 # --- Logger Setup ---
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ DATA_ELECTRICITY: Final[str] = "electricity"
 DATA_GAS: Final[str] = "gas"
 DATA_MONTH_SUMMARY: Final[str] = "month_summary"
 DATA_INVOICES: Final[str] = "invoices"
+DATA_USAGE: Final[str] = "usage"
 DATA_USER: Final[str] = "user"
 DATA_USER_SITES: Final[str] = "user_sites"
 DATA_DELIVERY_SITE: Final[str] = "delivery_site"
@@ -61,9 +63,9 @@ SERVICE_NAME_PRICES: Final[str] = "Prices"
 SERVICE_NAME_GAS_PRICES: Final[str] = "Gasprices"
 SERVICE_NAME_ELEC_PRICES: Final[str] = "Electricityprices"
 SERVICE_NAME_COSTS: Final[str] = "Costs"
+SERVICE_NAME_USAGE: Final[str] = "Usage"
 SERVICE_NAME_USER: Final[str] = "User"
 SERVICE_NAME_ACTIVE_DELIVERY_SITE: Final[str] = "Active_Delivery_Site"
-SERVICE_NAME_USAGE: Final[str] = "Usage"
 SERVICE_NAME_ELEC_CONN: Final[str] = "Electricity connection"
 SERVICE_NAME_GAS_CONN: Final[str] = "Gas connection"
 SERVICE_NAME_BATTERIES: Final[str] = "Smart Batteries"
@@ -90,6 +92,9 @@ class DeviceResponseEntry:
 
     # Invoice details (if available)
     invoices: Optional[Invoices] = None
+
+    # Usage information (if available)
+    usages: Optional[PeriodUsageAndCosts] = None
 
     # User information (if available)
     user: Optional[User] = None
