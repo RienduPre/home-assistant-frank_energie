@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
                                              SensorStateClass)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN,
-                                 UnitOfEnergy)
+                                 UnitOfEnergy, UnitOfVolume)
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
 from homeassistant.helpers.device_registry import DeviceEntryType
@@ -1314,6 +1314,40 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "Electricity usage yesterday": data[DATA_USAGE].electricity
         } if data[DATA_USAGE].electricity else {}
+    ),
+    FrankEnergieEntityDescription(
+        key="costs_gas_yesterday",
+        name="Costs gas yesterday",
+        translation_key="costs_elelectricity_yesterday",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
+        suggested_display_precision=2,
+        authenticated=True,
+        service_name=SERVICE_NAME_USAGE,
+        value_fn=lambda data: data[DATA_USAGE].gas.costs_total
+        if data[DATA_USAGE].gas
+        else None,
+        attr_fn=lambda data: {
+            "Gas costs yesterday": data[DATA_USAGE].gas
+        } if data[DATA_USAGE].gas else {}
+    ),
+    FrankEnergieEntityDescription(
+        key="usage_gas_yesterday",
+        name="Usage gas yesterday",
+        translation_key="usage_gas_yesterday",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
+        suggested_display_precision=2,
+        authenticated=True,
+        service_name=SERVICE_NAME_USAGE,
+        value_fn=lambda data: data[DATA_USAGE].gas.usage_total
+        if data[DATA_USAGE].gas
+        else None,
+        attr_fn=lambda data: {
+            "Gas usage yesterday": data[DATA_USAGE].gas
+        } if data[DATA_USAGE].gas else {}
     ),
     FrankEnergieEntityDescription(
         key="advanced_payment_amount",
