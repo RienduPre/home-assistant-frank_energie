@@ -415,10 +415,13 @@
                 "name": "Kosten elektriciteit gisteren"
             },
             "usage_elelectricity_yesterday": {
-                "name": "Gebruik elektriciteit gisteren"
+                "name": "Verbruik elektriciteit gisteren"
             },
             "costs_gas_yesterday": {
                 "name": "Kosten gas gisteren"
+            },
+            "usage_gas_yesterday": {
+                "name": "Verbruik gas gisteren"
             },
             "delivery_site": {
                 "name": "Leveringslocatie",
