@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Optional
 
 from homeassistant.const import CURRENCY_EURO, UnitOfEnergy, UnitOfVolume
-from python_frank_energie.models import (DeliverySite, Invoices, MarketPrices,
+from python_frank_energie.models import (Invoices, MarketPrices,
                                          MonthSummary, PeriodUsageAndCosts,
                                          User, UserSites)
 
@@ -103,7 +103,7 @@ class DeviceResponseEntry:
     user_sites: Optional[UserSites] = None
 
     # Delivery site details (if available) (This is replaced by user_sites, shouild be removed)
-    delivery_site: Optional[DeliverySite] = None
+    # delivery_site: Optional[DeliverySite] = None
 
     # Smart battery details (if available)
     smart_batteries: Optional[list[Any]] = None
