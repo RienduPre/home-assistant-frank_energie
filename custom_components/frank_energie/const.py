@@ -94,7 +94,7 @@ class DeviceResponseEntry:
     invoices: Optional[Invoices] = None
 
     # Usage information (if available)
-    usages: Optional[PeriodUsageAndCosts] = None
+    usage: Optional[PeriodUsageAndCosts] = None
 
     # User information (if available)
     user: Optional[User] = None
