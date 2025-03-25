@@ -10,7 +10,7 @@
     "name": "Frank Energie",
     "quality_scale": "silver",
     "requirements": [
-        "python-frank-energie"
+        "python-frank-energie==2025.3.22"
     ],
     "supported_brands": [
         "Frank Energie"
