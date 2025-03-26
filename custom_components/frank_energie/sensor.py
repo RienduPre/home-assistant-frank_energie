@@ -5,12 +5,20 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
-                                             SensorEntityDescription,
-                                             SensorStateClass)
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (CURRENCY_EURO, PERCENTAGE, STATE_UNKNOWN,
-                                 UnitOfEnergy, UnitOfVolume)
+from homeassistant.const import (
+    CURRENCY_EURO,
+    PERCENTAGE,
+    STATE_UNKNOWN,
+    UnitOfEnergy,
+    UnitOfVolume,
+)
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
 from homeassistant.helpers.device_registry import DeviceEntryType
@@ -20,12 +28,29 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
-                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_GAS,
-                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USAGE, DATA_USER,
-                    DATA_USER_SITES, DOMAIN, ICON, SERVICE_NAME_COSTS,
-                    SERVICE_NAME_PRICES, SERVICE_NAME_USAGE, SERVICE_NAME_USER,
-                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
+from .const import (
+    API_CONF_URL,
+    ATTR_TIME,
+    ATTRIBUTION,
+    COMPONENT_TITLE,
+    CONF_COORDINATOR,
+    DATA_ELECTRICITY,
+    DATA_GAS,
+    DATA_INVOICES,
+    DATA_MONTH_SUMMARY,
+    DATA_USAGE,
+    DATA_USER,
+    DATA_USER_SITES,
+    DOMAIN,
+    ICON,
+    SERVICE_NAME_COSTS,
+    SERVICE_NAME_PRICES,
+    SERVICE_NAME_USAGE,
+    SERVICE_NAME_USER,
+    UNIT_ELECTRICITY,
+    UNIT_GAS,
+    VERSION,
+)
 from .coordinator import FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,12 +64,7 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
     """Describes Frank Energie sensor entity."""
 
     authenticated: bool = False
-    # service_name: Union[str, None] = SERVICE_NAME_PRICES
     service_name: Optional[str] = SERVICE_NAME_PRICES
-    # value_fn: Union[Callable[[dict], StateType], None] = None
-    # attr_fn: Callable[[dict], dict[str, Union[StateType, list]]] = field(
-    #     default_factory=lambda: {}  # type: ignore
-    # )
     value_fn: Callable[[dict], StateType] = field(default=lambda _: STATE_UNKNOWN)
     attr_fn: Callable[[dict], dict[str, Union[StateType, list, None]]] = field(default=lambda _: {})
 
@@ -1302,7 +1322,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="usage_elelectricity_yesterday",
         name="Usage elelectricity yesterday",
         translation_key="usage_elelectricity_yesterday",
-        device_class=SensorDeviceClass.MONETARY,
+        device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
@@ -1318,10 +1338,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
         key="costs_gas_yesterday",
         name="Costs gas yesterday",
-        translation_key="costs_elelectricity_yesterday",
+        translation_key="costs_gas_yesterday",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
-        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
+        native_unit_of_measurement=CURRENCY_EURO,
         suggested_display_precision=2,
         authenticated=True,
         service_name=SERVICE_NAME_USAGE,
@@ -1329,14 +1349,14 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_USAGE].gas
         else None,
         attr_fn=lambda data: {
-            "Gas costs yesterday": data[DATA_USAGE].gas
+            "Gas costs gas": data[DATA_USAGE].gas
         } if data[DATA_USAGE].gas else {}
     ),
     FrankEnergieEntityDescription(
         key="usage_gas_yesterday",
         name="Usage gas yesterday",
         translation_key="usage_gas_yesterday",
-        device_class=SensorDeviceClass.MONETARY,
+        device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
         suggested_display_precision=2,
@@ -1823,7 +1843,7 @@ async def async_setup_entry(
         ],
         True,
     )
-    _LOGGER.debug("Frank Ejsonsensors added for entry: %s",
+    _LOGGER.debug("Frank Energie sensors added for entry: %s",
                   config_entry.entry_id)
 
     # Add the service to update the data
