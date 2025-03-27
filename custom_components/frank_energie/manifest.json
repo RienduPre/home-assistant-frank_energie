@@ -10,7 +10,7 @@
     "name": "Frank Energie",
     "quality_scale": "silver",
     "requirements": [
-        "python-frank-energie"
+        "python-frank-energie@git+https://github.com/HiDiHo01/python-frank-energie.git@main"
     ],
     "supported_brands": [
         "Frank Energie"
