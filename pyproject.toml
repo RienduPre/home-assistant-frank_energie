@@ -6,7 +6,7 @@ authors = ["HiDiHo <hidiho@gmail.com>"]  # Replace with your info
 
 [tool.poetry.dependencies]
 python = "^3.13"
-python-frank-energie = { git = "https://github.com/HiDiHo01/python-frank-energie.git", rev = "main" }
+python-frank-energie = "^2025.3.31"
 
 [tool.poetry.dev-dependencies]
 pytest = "^8.3"
