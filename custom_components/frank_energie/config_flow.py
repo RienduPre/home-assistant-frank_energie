@@ -7,20 +7,13 @@ from typing import Any, Optional
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_ACCESS_TOKEN,
-    CONF_AUTHENTICATION,
-    CONF_PASSWORD,
-    CONF_TOKEN,
-    CONF_USERNAME,
-)
+from homeassistant.const import (CONF_ACCESS_TOKEN, CONF_AUTHENTICATION,
+                                 CONF_PASSWORD, CONF_TOKEN, CONF_USERNAME)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.selector import (
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
-)
+from homeassistant.helpers.selector import (SelectSelector,
+                                            SelectSelectorConfig,
+                                            SelectSelectorMode)
 from python_frank_energie import Authentication, FrankEnergie
 from python_frank_energie.exceptions import AuthException, ConnectionException
 
@@ -90,12 +83,17 @@ class ConfigFlow(config_entries.ConfigFlow):
             )
             # me = await api.me()
             user_sites = await api.UserSites()
+            _LOGGER.debug("All user_sites: %s", user_sites)
+            # Check if the user has any delivery sites
+            if not user_sites or not user_sites.deliverySites:
+                raise Exception("No delivery sites found for this account")
             all_delivery_sites = [
                 site for site in user_sites.deliverySites if hasattr(site, "status")
             ]
 
             # filter out all sites that are not in delivery
             in_delivery_sites = [site for site in all_delivery_sites if site.status == "IN_DELIVERY"]
+            _LOGGER.debug("All user_sites with status IN_DELIVERY: %s", in_delivery_sites)
 
             if not in_delivery_sites:
                 raise Exception("No suitable sites found for this account")
@@ -112,13 +110,14 @@ class ConfigFlow(config_entries.ConfigFlow):
                     await self.async_set_unique_id(user_input[CONF_USERNAME])
                     self._abort_if_unique_id_configured()
 
-                # Create entry with unique_id as me.deliverySites[0].reference
+                # Create entry with unique_id as user_sites.deliverySites[0].reference
                 self.sign_in_data[CONF_SITE] = first_site.reference
                 self.sign_in_data[CONF_USERNAME] = self.create_title(first_site)
                 return await self._async_create_entry(self.sign_in_data)
 
             # Prepare site options for selection
-            site_options = [{"value": site.reference, "label": self.create_title(site)} for site in me.deliverySites]
+            site_options = [{"value": site.reference, "label": self.create_title(
+                site)} for site in user_sites.deliverySites]
             default_site = first_site.reference
 
             options = {
