@@ -4,3 +4,5 @@ pytest>=7.2.1
 python-frank-energie>=2025.3.31
 aiohttp
 freezegun
+cryptography>=44.0.1 # not directly required, pinned by Snyk to avoid a vulnerability
+jinja2>=3.1.6 # not directly required, pinned by Snyk to avoid a vulnerability
