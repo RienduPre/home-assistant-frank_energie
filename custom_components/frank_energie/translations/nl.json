@@ -506,13 +506,6 @@
                     "TREES": "Bomen"
                 }
             },
-            "push_notification_price_alerts": {
-                "name": "Stroomprijsadvies",
-                "state": {
-                    "True": "Aan",
-                    "False": "Uit"
-                }
-            },
             "smart_push_notification_price_alerts": {
                 "name": "Stroomprijsadvies",
                 "state": {
