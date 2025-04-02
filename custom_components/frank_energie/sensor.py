@@ -138,8 +138,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price
         if data[DATA_ELECTRICITY].current_hour else None,
-        attr_fn=lambda data: {
-            "prices": data[DATA_ELECTRICITY].asdict("market_price")
+        attr_fn=lambda data: {"prices": data[DATA_ELECTRICITY].asdict(
+            "market_price", timezone="Europe/Amsterdam")
         }
     ),
     FrankEnergieEntityDescription(
