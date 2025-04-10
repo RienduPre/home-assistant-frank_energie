@@ -17,12 +17,13 @@ from homeassistant.helpers.update_coordinator import \
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from python_frank_energie import FrankEnergie
 from python_frank_energie.exceptions import AuthException, RequestException
-from python_frank_energie.models import (Invoices, MarketPrices, MonthSummary,
-                                         PeriodUsageAndCosts, PriceData, User,
-                                         UserSites)
+from python_frank_energie.models import (EnodeChargers, Invoices, MarketPrices,
+                                         MonthSummary, PeriodUsageAndCosts,
+                                         PriceData, User, UserSites)
 
-from .const import (_LOGGER, DATA_ELECTRICITY, DATA_GAS, DATA_INVOICES,
-                    DATA_MONTH_SUMMARY, DATA_USAGE, DATA_USER, DATA_USER_SITES)
+from .const import (_LOGGER, DATA_ELECTRICITY, DATA_ENODE_CHARGERS, DATA_GAS,
+                    DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USAGE, DATA_USER,
+                    DATA_USER_SITES)
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -51,6 +52,9 @@ class FrankEnergieData(TypedDict):
     DATA_USER_SITES: Optional[UserSites]
     """Optional user sites."""
 
+    DATA_ENODE_CHARGERS: Optional[EnodeChargers]
+    """Optional Enode chargers data."""
+
 
 class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
     """ Get the latest data and update the states. """
@@ -65,6 +69,19 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
         self.entry = entry
         self.api = api
         self.site_reference = entry.data.get("site_reference", None)
+        self.enode_chargers: EnodeChargers | None = None
+        self.data: FrankEnergieData = {
+            DATA_ELECTRICITY: None,
+            DATA_GAS: None,
+            DATA_MONTH_SUMMARY: None,
+            DATA_INVOICES: None,
+            DATA_USAGE: None,
+            DATA_USER: None,
+            DATA_USER_SITES: None,
+            DATA_ENODE_CHARGERS: None,
+        }
+        self._update_interval = timedelta(minutes=60)
+        self._last_update_success = False
 
         super().__init__(
             hass,
@@ -80,12 +97,12 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
         tomorrow = today + timedelta(days=1)
 
         # Fetch today's prices and user data
-        prices_today, data_month_summary, data_invoices, data_user, user_sites, data_period_usage = await self._fetch_today_data(today, tomorrow)
+        prices_today, data_month_summary, data_invoices, data_user, user_sites, data_period_usage, data_enode_chargers = await self._fetch_today_data(today, tomorrow)
 
         # Fetch tomorrow's prices if it's after 13:00 UTC
         prices_tomorrow = await self._fetch_tomorrow_data(tomorrow) if datetime.now(timezone.utc).hour >= self.FETCH_TOMORROW_HOUR_UTC else None
 
-        return self._aggregate_data(prices_today, prices_tomorrow, data_month_summary, data_invoices, data_user, user_sites, data_period_usage)
+        return self._aggregate_data(prices_today, prices_tomorrow, data_month_summary, data_invoices, data_user, user_sites, data_period_usage, data_enode_chargers)
 
     async def _fetch_today_data(self, today: date, tomorrow: date):
         """Fetch today's data."""
@@ -138,8 +155,19 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
                 else None
             )
             _LOGGER.debug("Data user: %s", data_user)
+            if self.api.is_authenticated and data_user:
+                _LOGGER.debug("Data user smartCharging: %s", data_user.smartCharging.get("isActivated"))
+            data_enode_chargers = (
+                await self.api.enode_chargers(self.site_reference, start_date)
+                # use this in production
+                # if self.api.is_authenticated and data_user.smartCharging.get("isActivated")
+                # Use this for testing, enabling smart charging testdata
+                if self.api.is_authenticated
+                else None
+            )
+            _LOGGER.debug("Data enode chargers: %s", data_enode_chargers)
 
-            return prices_today, data_month_summary, data_invoices, data_user, user_sites, data_period_usage
+            return prices_today, data_month_summary, data_invoices, data_user, user_sites, data_period_usage, data_enode_chargers
 
         except UpdateFailed as err:
             if (self.data["DATA_ELECTRICITY"].future_prices is not None and
@@ -174,7 +202,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
             await self.__try_renew_token()
             raise UpdateFailed(ex) from ex
 
-    def _aggregate_data(self, prices_today, prices_tomorrow, data_month_summary, data_invoices, data_user, user_sites, data_period_usage):
+    def _aggregate_data(self, prices_today, prices_tomorrow, data_month_summary, data_invoices, data_user, user_sites, data_period_usage, data_enode_chargers):
         """Aggregate the fetched data into a single returnable dictionary."""
 
         result = {
@@ -185,6 +213,7 @@ class FrankEnergieCoordinator(DataUpdateCoordinator[FrankEnergieData]):
             DATA_USAGE: data_period_usage,
             DATA_USER: data_user,
             DATA_USER_SITES: user_sites,
+            DATA_ENODE_CHARGERS: data_enode_chargers,
         }
 
         if prices_tomorrow is not None:
@@ -277,6 +306,39 @@ async def hourly_refresh(coordinator: FrankEnergieCoordinator) -> None:
 
 async def start_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Start the coordinator."""
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, entry.data["access_token"])
+        coordinator = FrankEnergieCoordinator(hass, entry, api)
+        await coordinator.async_refresh()
+
+        today = datetime.now(timezone.utc)
+        start_time = datetime.combine(today.date(), time(15, 0), tzinfo=timezone.utc)
+        end_time = datetime.combine(today.date(), time(16, 0), tzinfo=timezone.utc)
+        interval = timedelta(minutes=5)
+
+        await run_hourly(start_time,
+                         end_time,
+                         interval,
+                         lambda: hourly_refresh(coordinator)
+                         )
+    await coordinator.async_refresh()
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, entry.data["access_token"])
+        coordinator = FrankEnergieCoordinator(hass, entry, api)
+        await coordinator.async_refresh()
+
+        today = datetime.now(timezone.utc)
+        start_time = datetime.combine(today.date(), time(15, 0), tzinfo=timezone.utc)
+        end_time = datetime.combine(today.date(), time(16, 0), tzinfo=timezone.utc)
+        interval = timedelta(minutes=5)
+
+        await run_hourly(start_time,
+                         end_time,
+                         interval,
+                         lambda: hourly_refresh(coordinator)
+                         )
+    await coordinator.async_refresh()
+    await coordinator.async_refresh()
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, entry.data["access_token"])
         coordinator = FrankEnergieCoordinator(hass, entry, api)

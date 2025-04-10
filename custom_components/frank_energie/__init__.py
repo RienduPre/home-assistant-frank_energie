@@ -137,19 +137,25 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
                                             ) -> tuple[str, str]:
         _LOGGER.debug("Getting site reference and title for coordinator")
 
-        # Haal de 'UserSites' gegevens op van de coordinator API
+        # Haal de 'Me' gegevens op van de coordinator API
+        # me_data = await coordinator.api.me()
         user_sites_data = await coordinator.api.UserSites()
 
-        # Haal de bezorgsites op uit de 'UserSites' gegevens
+        # Haal de bezorgsites op uit de 'Me' gegevens
+        # delivery_sites = me_data.deliverySites # remove this line
         user_sites = user_sites_data.deliverySites
 
         # Controleer of er bezorgsites zijn gevonden
+        # if not delivery_sites:
+        #     raise NoSuitableSitesFoundError(
+        #         "No suitable delivery sites found for this account")
         if not user_sites:
             raise NoSuitableSitesFoundError(
                 "No suitable delivery sites found for this account")
 
         # Selecteer de eerste bezorgsite voor nu, je kunt logica toevoegen
         # om de juiste site te selecteren op basis van voorkeuren
+        # selected_site = delivery_sites[0]
         selected_site = user_sites[0]
 
         # Maak een titel op basis van de adresgegevens van de bezorgsite

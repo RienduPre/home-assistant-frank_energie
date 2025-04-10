@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Optional
 
 from homeassistant.const import CURRENCY_EURO, UnitOfEnergy, UnitOfVolume
-from python_frank_energie.models import (Invoices, MarketPrices,
+from python_frank_energie.models import (EnodeChargers, Invoices, MarketPrices,
                                          MonthSummary, PeriodUsageAndCosts,
                                          User, UserSites)
 
@@ -17,7 +17,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # --- Domain Information ---
 DOMAIN: Final[str] = "frank_energie"
-VERSION: Final[str] = "2025.4.2"
+VERSION: Final[str] = "2025.4.11"
 ATTRIBUTION: Final[str] = "Data provided by Frank Energie"
 UNIQUE_ID: Final[str] = "frank_energie"
 
@@ -49,6 +49,7 @@ DATA_USER_SITES: Final[str] = "user_sites"
 DATA_DELIVERY_SITE: Final[str] = "delivery_site"
 DATA_BATTERIES: Final[str] = "smart_batteries"
 DATA_BATTERY_SESSIONS: Final[str] = "smart_battery_sessions"
+DATA_ENODE_CHARGERS: Final[str] = "enode_chargers"
 
 # --- Attribute Constants ---
 ATTR_TIME: Final[str] = "from_time"
@@ -70,6 +71,7 @@ SERVICE_NAME_ELEC_CONN: Final[str] = "Electricity connection"
 SERVICE_NAME_GAS_CONN: Final[str] = "Gas connection"
 SERVICE_NAME_BATTERIES: Final[str] = "Smart Batteries"
 SERVICE_NAME_BATTERY_SESSIONS: Final[str] = "Smart Battery Sessions"
+SERVICE_NAME_ENODE_CHARGERS: Final[str] = "Enode Chargers"
 
 # --- Display Constants ---
 DEFAULT_ROUND: Final[int] = 3  # Default display round value for prices
@@ -110,6 +112,9 @@ class DeviceResponseEntry:
 
     # Smart battery session details (if available)
     smart_battery_sessions: Optional[list[Any]] = None
+
+    # Enode chargers details (if available)
+    enode_chargers: Optional[EnodeChargers] = None
 
 
 # Log loading of constants (move to init.py for better practice)
