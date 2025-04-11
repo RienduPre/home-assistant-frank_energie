@@ -237,7 +237,7 @@ class ConfigFlow(config_entries.ConfigFlow):
         )
 
     @staticmethod
-    def create_title(site) -> str:
+    def create_title(site: Any) -> str:
         """Create a formatted title from the site's address."""
         title = f"{site.address.street} {site.address.houseNumber}"
         if site.address.houseNumberAddition is not None:
@@ -311,9 +311,10 @@ class ConfigFlow(config_entries.ConfigFlow):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Get options flow handler only if a site is selected."""
-        if CONF_SITE in config_entry.data:
+        entry_data = config_entry.data
+        if CONF_SITE in entry_data:
             _LOGGER.debug("A site is selected, providing options flow.")
-            return FrankEnergieOptionsFlowHandler(config_entry)
+            return FrankEnergieOptionsFlowHandler(entry_data)
 
         _LOGGER.debug("No site selected, no options flow available.")
         return NoOptionsAvailableFlowHandler()
@@ -333,13 +334,12 @@ class ConfigFlow(config_entries.ConfigFlow):
 class FrankEnergieOptionsFlowHandler(config_entries.OptionsFlow):
     """Frank Energie config flow options handler."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
+    def __init__(self, entry_data: dict) -> None:
         """Initialize Frank Energie options flow."""
-        self.config_entry = config_entry
-        self.options = dict(config_entry.options)
+        self.entry_data = entry_data
+        self.options = dict(entry_data)  # Gebruik entry_data in plaats van config_entry.options
 
     async def async_step_init(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
-        # async def async_step_init(self, user_input=None):
         """Manage the options."""
         return await self.async_step_user()
 
@@ -353,13 +353,7 @@ class FrankEnergieOptionsFlowHandler(config_entries.OptionsFlow):
             self.options.update(user_input)
             return await self._update_options()
 
-        # username = (
-        #     self.config_entry.data.get(CONF_USERNAME)
-        #     if self.config_entry
-        #     else None
-        # )
-        # username = self.config_entry.data.get(CONF_USERNAME, "")
-        username = self.config_entry.unique_id
+        username = self.entry_data.get("unique_id", "")
 
         data_schema = vol.Schema({
             vol.Required(CONF_USERNAME, default=username): str,
@@ -375,7 +369,7 @@ class FrankEnergieOptionsFlowHandler(config_entries.OptionsFlow):
     async def _update_options(self) -> FlowResult:
         """Update config entry options."""
         return self.async_create_entry(
-            title=self.config_entry.data.get(CONF_USERNAME, "Frank Energie"),
+            title=self.entry_data.get(CONF_USERNAME, "Frank Energie"),
             data=self.options
         )
 
