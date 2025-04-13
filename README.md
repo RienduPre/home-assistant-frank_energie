@@ -69,7 +69,7 @@ header:
   show: true
   title: Energieprijs per uur (€/kwh)
 series:
-  - entity: sensor.current_electricity_price_all_in
+  - entity: sensor.frank_energie_prices_current_electricity_price_all_in
     show:
       legend_value: false
     stroke_width: 2
