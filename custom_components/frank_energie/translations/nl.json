@@ -423,6 +423,12 @@
             "usage_gas_yesterday": {
                 "name": "Verbruik gas gisteren"
             },
+            "costs_feed_in_yesterday": {
+                "name": "Opbrengst elektriciteit gisteren"
+            },
+            "usage_feed_in_yesterday": {
+                "name": "Geleverde elektriciteit gisteren"
+            },
             "delivery_site": {
                 "name": "Leveringslocatie",
                 "state_attributes": {
