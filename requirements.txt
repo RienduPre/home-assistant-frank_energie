@@ -1,8 +1,6 @@
-pytest-homeassistant-custom-component>=0.13.7
-flake8>=5.0.4
-pytest>=7.2.1
+# requirements.txt
+
+# Core dependencies
 python-frank-energie>=2025.4.11
-aiohttp>=3.11.16
-freezegun>=1.5.1
-cryptography>=44.0.1 # not directly required, pinned by Snyk to avoid a vulnerability
-jinja2>=3.1.6 # not directly required, pinned by Snyk to avoid a vulnerability
+aiohttp>=3.9.0,<4.0.0
+PyJWT>=2.8.0,<3.0.0
