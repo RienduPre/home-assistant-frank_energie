@@ -3,34 +3,29 @@ Sensor platform for Frank Energie integration."""
 # sensor.py
 # -*- coding: utf-8 -*-
 # VERSION = "2025.4.11"
-# pylint: disable=invalid-name
-# pylint: disable=import-error
-# pylint: disable=unused-import
-# pylint: disable=too-few-public-methods
-# pylint: disable=too-many-ancestors
-# pylint: disable=unused-argument
-# pylint: disable=too-many-arguments
-# pylint: disable=too-many-instance-attributes
-# pylint: disable=too-many-public-methods
-# pylint: disable=too-many-lines
-# pylint: disable=too-many-branches
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-statements
-# pylint: disable=too-many-nested-blocks
+
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable, Final, Optional, Union
 
-import voluptuous as vol
-from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
-                                             SensorEntityDescription,
-                                             SensorStateClass)
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (CURRENCY_EURO, PERCENTAGE, STATE_UNAVAILABLE,
-                                 STATE_UNKNOWN, UnitOfEnergy, UnitOfPower,
-                                 UnitOfVolume)
-from homeassistant.core import HassJob, HomeAssistant, ServiceCall
+from homeassistant.const import (
+    CURRENCY_EURO,
+    PERCENTAGE,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfVolume,
+)
+from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
@@ -39,13 +34,33 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt, utcnow
 
-from .const import (API_CONF_URL, ATTR_TIME, ATTRIBUTION, COMPONENT_TITLE,
-                    CONF_COORDINATOR, DATA_ELECTRICITY, DATA_ENODE_CHARGERS,
-                    DATA_GAS, DATA_INVOICES, DATA_MONTH_SUMMARY, DATA_USAGE,
-                    DATA_USER, DATA_USER_SITES, DOMAIN, ICON,
-                    SERVICE_NAME_COSTS, SERVICE_NAME_ENODE_CHARGERS,
-                    SERVICE_NAME_PRICES, SERVICE_NAME_USAGE, SERVICE_NAME_USER,
-                    UNIT_ELECTRICITY, UNIT_GAS, VERSION)
+from .const import (
+    API_CONF_URL,
+    ATTR_TIME,
+    ATTRIBUTION,
+    COMPONENT_TITLE,
+    CONF_COORDINATOR,
+    DATA_BATTERIES,
+    DATA_ELECTRICITY,
+    DATA_ENODE_CHARGERS,
+    DATA_GAS,
+    DATA_INVOICES,
+    DATA_MONTH_SUMMARY,
+    DATA_USAGE,
+    DATA_USER,
+    DATA_USER_SITES,
+    DOMAIN,
+    ICON,
+    SERVICE_NAME_BATTERIES,
+    SERVICE_NAME_COSTS,
+    SERVICE_NAME_ENODE_CHARGERS,
+    SERVICE_NAME_PRICES,
+    SERVICE_NAME_USAGE,
+    SERVICE_NAME_USER,
+    UNIT_ELECTRICITY,
+    UNIT_GAS,
+    VERSION,
+)
 from .coordinator import FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -163,9 +178,9 @@ class ChargerSensorDescription:
         """Get the state value."""
         return self.value_fn(data) if self.value_fn else STATE_UNAVAILABLE
 
-    def get_value(self, data: dict) -> StateType:
-        """Get the value from the provided data."""
-        return self.value_fn(data) if self.value_fn else STATE_UNKNOWN
+    # def get_value(self, data: dict) -> StateType:
+    #     """Get the value from the provided data."""
+    #     return self.value_fn(data) if self.value_fn else STATE_UNKNOWN
 
     def get_attributes(self, data: dict) -> dict[str, Union[StateType, list]]:
         """Get the additional attributes."""
@@ -215,6 +230,29 @@ STATIC_ENODE_SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         attr_fn=lambda data: {
             "chargers": [asdict(charger) for charger in data[DATA_ENODE_CHARGERS].chargers]
             if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers
+            else []
+        }
+    ),
+)
+
+STATIC_BATTERY_SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
+    FrankEnergieEntityDescription(
+        key="total_batteries",
+        name="Total Batteries",
+        native_unit_of_measurement=None,
+        state_class=None,
+        device_class=None,
+        authenticated=True,
+        service_name=SERVICE_NAME_BATTERIES,
+        icon="mdi:battery",
+        value_fn=lambda data: (
+            len(data[DATA_BATTERIES].smart_batteries)
+            if DATA_BATTERIES in data and data[DATA_BATTERIES].smart_batteries
+            else None
+        ),
+        attr_fn=lambda data: {
+            "batteries": [asdict(battery) for battery in data[DATA_BATTERIES].smart_batteries]
+            if DATA_BATTERIES in data and data[DATA_BATTERIES].smart_batteries
             else []
         }
     ),
@@ -521,7 +559,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
                 data[DATA_GAS].current_hour and
                 data[DATA_GAS].current_hour.market_price != 0 and
                 data[DATA_GAS].current_hour.market_price_tax != 0
-            ) else 21
+            ) else None
         ),
         entity_registry_enabled_default=True
     ),
@@ -1428,7 +1466,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="usage_gas_yesterday",
         name="Usage gas yesterday",
         translation_key="usage_gas_yesterday",
-        device_class=SensorDeviceClass.ENERGY,
+        device_class=SensorDeviceClass.GAS,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
         suggested_display_precision=2,
@@ -1442,9 +1480,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         } if data[DATA_USAGE].gas else {}
     ),
     FrankEnergieEntityDescription(
-        key="costs_feed_in_yesterday",
-        name="Costs feed_in yesterday",
-        translation_key="costs_feed_in_yesterday",
+        key="gains_feed_in_yesterday",
+        name="Gains feed_in yesterday",
+        translation_key="gains_feed_in_yesterday",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=CURRENCY_EURO,
@@ -1455,13 +1493,13 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_USAGE].feed_in
         else None,
         attr_fn=lambda data: {
-            "feed_in costs yesterday": data[DATA_USAGE].feed_in
+            "feed_in gains yesterday": data[DATA_USAGE].feed_in
         } if data[DATA_USAGE].feed_in else {}
     ),
     FrankEnergieEntityDescription(
-        key="usage_feed_in_yesterday",
-        name="Usage feed_in yesterday",
-        translation_key="usage_feed_in_yesterday",
+        key="delivered_feed_in_yesterday",
+        name="Delivered feed-in yesterday",
+        translation_key="delivered_feed_in_yesterday",
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -1472,7 +1510,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         if data[DATA_USAGE].feed_in
         else None,
         attr_fn=lambda data: {
-            "feed_in usage yesterday": data[DATA_USAGE].feed_in
+            "Amount feed-in yesterday": data[DATA_USAGE].feed_in
         } if data[DATA_USAGE].feed_in else {}
     ),
     FrankEnergieEntityDescription(
@@ -1952,7 +1990,7 @@ class EnodeChargersData:
         self.chargers = chargers
 
 
-def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData) -> list[FrankEnergieEntityDescription]:
+def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, index) -> list[FrankEnergieEntityDescription]:
     """Build dynamic Enode charger sensor descriptions."""
     descriptions = []
 
@@ -2243,6 +2281,286 @@ def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData) -> l
     return descriptions
 
 
+class SmartBatteriesData:
+    """Class to hold Smart Batteries data."""
+
+    def __init__(self, batteries: list[Any]):
+        self.batteries = batteries
+
+    class SmartBattery:
+        def __init__(self, brand: str, capacity: float, external_reference: str, id: str, max_charge_power: float, max_discharge_power: float, provider: str, created_at: Any, updated_at: Any):
+            self.brand = brand
+            self.capacity = capacity
+            self.external_reference = external_reference
+            self.id = id
+            self.max_charge_power = max_charge_power
+            self.max_discharge_power = max_discharge_power
+            self.provider = provider
+            self.created_at = created_at
+            self.updated_at = updated_at
+
+        def __repr__(self):
+            return f"SmartBattery(brand={self.brand}, capacity={self.capacity}, id={self.id})"
+
+    def get_smart_batteries(self) -> list[SmartBattery]:
+        return [self.SmartBattery(**b) if isinstance(b, dict) else b for b in self.batteries]
+
+    def get_battery_count(self) -> int:
+        """Return the number of smart batteries."""
+        return len(self.batteries)
+
+
+def _build_dynamic_smart_batteries_descriptions(batteries_data: SmartBatteriesData) -> list[FrankEnergieEntityDescription]:
+    """Build dynamic entity descriptions for smart batteries."""
+    descriptions = []
+
+    # Safely get the list of batteries from the data
+    smart_batteries = getattr(batteries_data, "smart_batteries", [])
+
+    for i, battery in enumerate(smart_batteries):
+        # Get battery info safely (handles both dict and object)
+        battery_id = battery.id if hasattr(battery, "id") else battery.get("id")
+        brand = battery.brand if hasattr(battery, "brand") else battery.get("brand", "Unknown")
+
+        base_key = f"smart_battery_{i}"
+        name_prefix = f"{brand} Battery"
+
+        # Create a helper function to extract battery attributes from data updates
+        def create_value_fn(attr, battery_id=battery_id):
+            def value_fn(data):
+                # Try to get the smart_batteries list from data
+                if hasattr(data, "get"):
+                    batteries_obj = data.get("smart_batteries", [])
+                elif hasattr(data, "smart_batteries"):
+                    batteries_obj = data.smart_batteries
+                else:
+                    return None
+
+                # Find the matching battery
+                for b in batteries_obj:
+                    b_id = b.id if hasattr(b, "id") else b.get("id") if isinstance(b, dict) else None
+                    if b_id == battery_id:
+                        # Extract the attribute safely
+                        if isinstance(b, dict):
+                            value = b.get(attr)
+                        else:
+                            value = getattr(b, attr, None)
+
+                        # Special handling for datetime objects
+                        if attr in ["created_at", "updated_at"] and isinstance(value, datetime):
+                            return value.isoformat()
+                        return value
+                return None
+            return value_fn
+
+        # Define all battery attributes to monitor
+        battery_attrs = [
+            ("brand", "Brand", "mdi:battery"),
+            ("capacity", "Capacity (kWh)", "mdi:battery-charging"),
+            ("external_reference", "External Reference", "mdi:identifier"),
+            ("id", "ID", "mdi:fingerprint"),
+            ("max_charge_power", "Max Charge Power (kW)", "mdi:flash"),
+            ("max_discharge_power", "Max Discharge Power (kW)", "mdi:flash-off"),
+            ("provider", "Provider", "mdi:factory"),
+            ("created_at", "Created At", "mdi:calendar-clock"),
+            ("updated_at", "Updated At", "mdi:calendar-edit"),
+        ]
+
+        # Create an entity description for each attribute
+        for attr, label, icon in battery_attrs:
+            descriptions.append(
+                FrankEnergieEntityDescription(
+                    key=f"{base_key}_{attr}",
+                    name=f"{name_prefix} {label}",
+                    authenticated=True,
+                    service_name=SERVICE_NAME_BATTERIES,
+                    icon=icon,
+                    value_fn=create_value_fn(attr)
+                )
+            )
+
+    return descriptions
+
+
+def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatteriesData.SmartBattery]) -> list[FrankEnergieEntityDescription]:
+    """Build dynamic entity descriptions for all smart batteries.
+
+    Args:
+        batteries: List of SmartBattery instances from API.
+
+    Returns:
+        List of FrankEnergieEntityDescription objects.
+    """
+    descriptions: list[FrankEnergieEntityDescription] = []
+    _LOGGER.debug("Building dynamic smart batteries descriptions...")
+    _LOGGER.debug(batteries)
+    # Check if batteries is empty
+    if not batteries:
+        _LOGGER.debug("No batteries found.")
+        return descriptions
+    _LOGGER.debug(f"Found {len(batteries)} batteries.")
+    # Check if batteries is a list
+    if not isinstance(batteries, list):
+        _LOGGER.error("Batteries data is not a list.")
+        return descriptions
+    # Check if batteries contain SmartBattery instances
+    if not all(isinstance(b, SmartBatteriesData.SmartBattery) for b in batteries):
+        _LOGGER.error("Not all items in batteries are SmartBattery instances.")
+        return descriptions
+
+    # Helper function to safely get attributes from either objects or dictionaries
+    def safe_get_attr(data, battery_id, attr):
+        """Get attribute from the correct battery, handling both dict and object types."""
+        for b in data.get("batteries", []):
+            b_id = getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")
+            if b_id == battery_id:
+                return getattr(b, attr, None) if not isinstance(b, dict) else b.get(attr)
+        return None
+
+    for i, battery in enumerate(batteries):
+        base_key = f"smart_battery_{i}"
+        name_prefix = f"{battery.brand} Battery"
+        battery_id = battery.id
+
+        def _get_battery(data: dict) -> SmartBatteriesData.SmartBattery | None:
+            """Safely extract the correct battery from data dict."""
+            for b in data.get("batteries", []):
+                if isinstance(b, dict):
+                    if b.get("id") == battery_id:
+                        return b
+                elif hasattr(b, "id") and b.id == battery_id:
+                    return b
+            return None
+
+        descriptions.extend([
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_brand",
+                name=f"{name_prefix} Brand",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:battery",
+                value_fn=lambda data, _id=battery.id: next(
+                    (
+                        getattr(b, "brand", None) if not isinstance(b, dict) else b.get("brand")
+                        for b in data.get("batteries", [])
+                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                    ),
+                    None,
+                ),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_capacity",
+                name=f"{name_prefix} Capacity (kWh)",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:battery-charging",
+                # Handle both dictionary and object cases
+                value_fn=lambda data, _id=battery.id: next(
+                    (
+                        b.capacity if hasattr(b, "capacity") else b.get("capacity")
+                        for b in data.get("batteries", [])
+                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                    ),
+                    None,
+                ),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_external_reference",
+                name=f"{name_prefix} External Reference",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:identifier",
+                value_fn=lambda data, _id=battery.id: next(
+                    (
+                        getattr(b, "external_reference", None) if not isinstance(
+                            b, dict) else b.get("external_reference")
+                        for b in data.get("batteries", [])
+                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                    ),
+                    None,
+                ),
+                attr_fn=lambda data, _id=battery.id: next(
+                    (
+                        {
+                            "external_reference": b.external_reference
+                            if not isinstance(b, dict) else b.get("external_reference")
+                            for b in data.get("batteries", [])
+                            if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                        }
+                        for b in data.get("batteries", [])
+                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                    ),
+                    None,
+                ),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_id",
+                name=f"{name_prefix} ID",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:fingerprint",
+                value_fn=lambda data, _id=battery_id: safe_get_attr(data, _id, "id"),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_max_charge_power",
+                name=f"{name_prefix} Max Charge Power (kW)",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:flash",
+                value_fn=lambda data, _id=battery_id: safe_get_attr(data, _id, "max_charge_power"),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_max_charge_power2",
+                name=f"{name_prefix} Max Charge Power2 (kW)",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:flash",
+                value_fn=lambda data, _id=battery.id: next(
+                    (
+                        b.max_charge_power if hasattr(b, "max_charge_power") else b.get("max_charge_power")
+                        for b in data.get("batteries", [])
+                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
+                    ),
+                    None,
+                ),
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_max_discharge_power",
+                name=f"{name_prefix} Max Discharge Power (kW)",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:flash-off",
+                value_fn=lambda b=battery: b.max_discharge_power,
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_provider",
+                name=f"{name_prefix} Provider",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:factory",
+                value_fn=battery.provider,
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_created_at",
+                name=f"{name_prefix} Created At",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:calendar-clock",
+                value_fn=lambda b=battery: b.created_at.isoformat() if isinstance(b.created_at, datetime) else b.created_at,
+            ),
+            FrankEnergieEntityDescription(
+                key=f"{base_key}_updated_at",
+                name=f"{name_prefix} Updated At",
+                authenticated=True,
+                service_name=SERVICE_NAME_BATTERIES,
+                icon="mdi:calendar-edit",
+                value_fn=lambda b=battery: b.updated_at.isoformat() if isinstance(b.updated_at, datetime) else b.updated_at,
+            ),
+        ])
+
+    return descriptions
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -2261,20 +2579,20 @@ async def async_setup_entry(
         if not description.authenticated or coordinator.api.is_authenticated
     ]
 
-    _LOGGER.debug("coordinator.enode_chargers: %d", coordinator.data.get('enode_chargers'))
+    # _LOGGER.debug("coordinator.enode_chargers: %d", coordinator.data.get('enode_chargers'))
     # _LOGGER.debug("coordinator.enode_chargers chargers: %d", coordinator.data['enode_chargers'].chargers)
     # _LOGGER.debug("coordinator.enode_chargers chargers: %d", coordinator.data.get('enode_chargers').get('chargers'))
 
     if (enode := coordinator.data.get(DATA_ENODE_CHARGERS)) and enode.chargers:
         _LOGGER.debug("Setting up Enode charger sensors for %d chargers", len(enode.chargers))
-        for charger in enumerate(enode.chargers):
-            #             for description in STATIC_ENODE_SENSOR_TYPES:
-            sensor_descriptions = list(STATIC_ENODE_SENSOR_TYPES) + _build_dynamic_enode_sensor_descriptions(enode)
+        static_sensor_descriptions = list(STATIC_ENODE_SENSOR_TYPES)
+
+        for i, charger in enumerate(enode.chargers):
+            sensor_descriptions = static_sensor_descriptions + _build_dynamic_enode_sensor_descriptions(enode, i)
 
             for description in sensor_descriptions:
                 if not description.authenticated or coordinator.api.is_authenticated:
                     entities.append(FrankEnergieSensor(coordinator, description, config_entry))
-
     # Add Enode charger sensors if available
 #    entities.extend(
 #        FrankEnergieSensor(coordinator, description, config_entry)
@@ -2290,6 +2608,26 @@ async def async_setup_entry(
     #             if not description.authenticated or coordinator.api.is_authenticated:
     #                 entities.append(EnodeChargerSensor(charger, description))
 
+    # _LOGGER.debug("coordinator.smart_batteries: %d", coordinator.data.get('smart_batteries'))
+    # _LOGGER.debug("coordinator.enode_chargers chargers: %d", coordinator.data['enode_chargers'].chargers)
+    # _LOGGER.debug("coordinator.enode_chargers chargers: %d", coordinator.data.get('enode_chargers').get('chargers'))
+
+    # coordinator.data.get(DATA_BATTERIES)) = <class 'python_frank_energie.models.SmartBatteries'>
+    if (batteries := coordinator.data.get(DATA_BATTERIES)):
+        _LOGGER.debug("Setting up smart battery sensors: %s", batteries)
+        _LOGGER.debug("Setting up smart battery type: %s", type(batteries))
+        _LOGGER.debug("Setting up smart battery sensors: %d", len(batteries.smart_batteries))
+        _LOGGER.debug("Setting up smart battery type: %s", type(batteries.smart_batteries))
+        for i, battery in enumerate(batteries.smart_batteries):
+            dynamic_battery_descriptions = _build_dynamic_smart_batteries_descriptions(batteries.smart_batteries)
+            _LOGGER.debug("Setting up smart battery capacity: %d", battery.capacity)
+            sensor_descriptions = list(STATIC_BATTERY_SENSOR_TYPES) + \
+                dynamic_battery_descriptions
+
+            for description in sensor_descriptions:
+                if not description.authenticated or coordinator.api.is_authenticated:
+                    entities.append(FrankEnergieSensor(coordinator, description, config_entry))
+                    _LOGGER.debug("Added sensor for battery %d: %s", i, description.key)
     # Register the sensors to Home Assistant
     try:
         async_add_entities(entities, True)
@@ -2297,50 +2635,5 @@ async def async_setup_entry(
         _LOGGER.error("Failed to add entities for entry %s: %s", config_entry.entry_id, str(e))
 
     _LOGGER.debug("All sensors added for entry: %s", config_entry.entry_id)
-
-    # Define the schema for the service (currently empty, can be extended if needed)
-    SERVICE_SCHEMA_UPDATE = vol.Schema({})
-
-    # Add the service to update the data
-    async def async_update_data(call: ServiceCall) -> None:
-        """Update the data for the sensor."""
-        _LOGGER.debug("Updating data for Frank Energie sensors")
-        await coordinator.async_request_refresh()
-
-    # Register the update service
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_NAME_UPDATE,
-        async_update_data,
-        schema=SERVICE_SCHEMA_UPDATE,
-    )
-    _LOGGER.debug("Service %s registered", SERVICE_NAME_UPDATE)
-    #                 entities.append(EnodeChargerSensor(charger, description))
-
-    # Register the sensors to Home Assistant
-    try:
-        async_add_entities(entities, True)
-    except Exception as e:
-        _LOGGER.error("Failed to add entities for entry %s: %s", config_entry.entry_id, str(e))
-
-    _LOGGER.debug("All sensors added for entry: %s", config_entry.entry_id)
-
-    # Define the schema for the service (currently empty, can be extended if needed)
-    SERVICE_SCHEMA_UPDATE = vol.Schema({})
-
-    # Add the service to update the data
-    async def async_update_data(call: ServiceCall) -> None:
-        """Update the data for the sensor."""
-        _LOGGER.debug("Updating data for Frank Energie sensors")
-        await coordinator.async_request_refresh()
-
-    # Register the update service
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_NAME_UPDATE,
-        async_update_data,
-        schema=SERVICE_SCHEMA_UPDATE,
-    )
-    _LOGGER.debug("Service %s registered", SERVICE_NAME_UPDATE)
 
 # EnodeChargers(chargers=[EnodeCharger(can_smart_charge=True, charge_settings=ChargeSettings(calculated_deadline=datetime.datetime(2025, 3, 24, 6, 0, tzinfo=datetime.timezone.utc), capacity=75, deadline=None, hour_friday=420, hour_monday=420, hour_saturday=420, hour_sunday=420, hour_thursday=420, hour_tuesday=420, hour_wednesday=420, id='cm3rogazq06pz13p8eucfutnx', initial_charge=0, initial_charge_timestamp=datetime.datetime(2024, 11, 21, 19, 0, 15, 396000, tzinfo=datetime.timezone.utc), is_smart_charging_enabled=True, is_solar_charging_enabled=False, max_charge_limit=80, min_charge_limit=20), charge_state=ChargeState(battery_capacity=None, battery_level=None, charge_limit=None, charge_rate=None, charge_time_remaining=None, is_charging=False, is_fully_charged=None, is_plugged_in=False, last_updated=datetime.datetime(2025, 3, 23, 16, 6, 57, tzinfo=datetime.timezone.utc), power_delivery_state='UNPLUGGED', range=None), id='cm3rogazq06pz13p8eucfutnx', information={'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, interventions=[], is_reachable=True, last_seen=datetime.datetime(2025, 3, 23, 16, 24, 51, 913000, tzinfo=datetime.timezone.utc)), EnodeCharger(can_smart_charge=True, charge_settings=ChargeSettings(calculated_deadline=datetime.datetime(2025, 3, 24, 6, 0, tzinfo=datetime.timezone.utc), capacity=75, deadline=None, hour_friday=420, hour_monday=420, hour_saturday=420, hour_sunday=420, hour_thursday=420, hour_tuesday=420, hour_wednesday=420, id='cm3rogap606pu13p8w08epzjx', initial_charge=0, initial_charge_timestamp=datetime.datetime(2024, 11, 21, 19, 0, 15, 16000, tzinfo=datetime.timezone.utc), is_smart_charging_enabled=True, is_solar_charging_enabled=False, max_charge_limit=80, min_charge_limit=20), charge_state=ChargeState(battery_capacity=None, battery_level=None, charge_limit=None, charge_rate=10.71, charge_time_remaining=None, is_charging=True, is_fully_charged=None, is_plugged_in=True, last_updated=datetime.datetime(2025, 3, 23, 16, 23, 53, tzinfo=datetime.timezone.utc), power_delivery_state='PLUGGED_IN:CHARGING', range=None), id='cm3rogap606pu13p8w08epzjx', information={'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, interventions=[], is_reachable=True, last_seen=datetime.datetime(2025, 3, 23, 16, 24, 50, 746000, tzinfo=datetime.timezone.utc))])
