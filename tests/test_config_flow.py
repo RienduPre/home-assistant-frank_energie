@@ -1,114 +1,120 @@
+"""Tests for Frank Energie config flow."""
+
+from typing import Any
+
 import pytest
-from homeassistant import data_entry_flow
+from aiohttp import ClientConnectionError
+from syrupy.assertion import SnapshotAssertion
+
+from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from custom_components.frank_energie.const import DOMAIN, CONF_ACCESS_TOKEN, CONF_TOKEN
+from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.frank_energie.const import (
+    CONF_ACCESS_TOKEN,
+    CONF_PASSWORD,
+    CONF_REFRESH_TOKEN,
+    CONF_SITE,
+    CONF_TOKEN,
+    CONF_USERNAME,
+    DOMAIN,
+)
 
-@pytest.fixture
-async def mock_auth_success():
-    class MockAuth:
-        authToken = "access_token"
-        refreshToken = "refresh_token"
+pytestmark = pytest.mark.usefixtures("mock_setup_entry", "mock_setup_entry_success")
 
-    return MockAuth()
+USER_INPUT = {
+    CONF_USERNAME: "user@example.com",
+    CONF_PASSWORD: "secure_password",
+}
 
 
 async def test_show_login_form(hass: HomeAssistant) -> None:
-    """Test that the login form is shown initially."""
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-
-    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    """Test that the login form is shown."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "login"
 
 
-async def test_invalid_login(hass: HomeAssistant) -> None:
-    """Test showing errors when login fails."""
-    # Patch de login methode zodat deze altijd faalt
-    with pytest.MonkeyPatch().context() as mp:
-        from custom_components.frank_energie.config_flow import FrankEnergieConfigFlow
-        mp.setattr(FrankEnergieConfigFlow, "_authenticate", lambda *_, **__: None)
-
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": "user"},
-        )
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            user_input={"username": "user", "password": ""},
-        )
-
-        assert result["type"] == data_entry_flow.FlowResultType.FORM
-        assert result["errors"] == {"base": "invalid_auth"}
-
-
-async def test_successful_login(hass: HomeAssistant, mock_auth_success) -> None:
-    """Test a successful login and flow continuation."""
-    with pytest.MonkeyPatch().context() as mp:
-        from custom_components.frank_energie.config_flow import FrankEnergieConfigFlow
-
-        async def _mock_authenticate(self, user_input):
-            return mock_auth_success
-
-        async def _mock_step_site(self, sign_in_data):
-            return self.async_create_entry(title="Frank Energie", data=sign_in_data)
-
-        mp.setattr(FrankEnergieConfigFlow, "_authenticate", _mock_authenticate)
-        mp.setattr(FrankEnergieConfigFlow, "async_step_site", _mock_step_site)
-
-        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            user_input={"username": "testuser", "password": "testpass"},
-        )
-
-        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-        assert result["title"] == "Frank Energie"
-        assert result["data"]["username"] == "testuser"
-        assert result["data"][CONF_ACCESS_TOKEN] == "access_token"
-        assert result["data"][CONF_TOKEN] == "refresh_token"
-
-
-async def test_options_flow_with_site(hass: HomeAssistant) -> None:
-    """Test that options flow is shown when a site is configured."""
-    config_entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"username": "user", "site": "123"},
-        options={}
+async def test_invalid_authentication(hass: HomeAssistant, mock_auth_failure) -> None:
+    """Test showing error when authentication fails."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+        data=USER_INPUT,
     )
-    config_entry.add_to_hass(hass)
-
-    result = await hass.config_entries.options.async_init(config_entry.entry_id)
-
-    assert result["type"] == data_entry_flow.FlowResultType.FORM
-    assert result["step_id"] == "user"
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "login"
+    assert result["errors"] == {"base": "invalid_auth"}
 
 
-async def test_options_flow_no_site(hass: HomeAssistant) -> None:
-    """Test that NoOptionsAvailableFlowHandler is shown if no site is selected."""
-    config_entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"username": "user"},
-        options={}
+async def test_connection_error(hass: HomeAssistant, mock_auth_exception) -> None:
+    """Test handling of connection errors."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+        data=USER_INPUT,
     )
-    config_entry.add_to_hass(hass)
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "login"
+    assert result["errors"] == {"base": "cannot_connect"}
 
+
+async def test_successful_login_flow(hass: HomeAssistant, mock_auth_success) -> None:
+    """Test a successful login and redirect to site step."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+        data=USER_INPUT,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "site"
+
+
+async def test_reauth_flow_success(hass: HomeAssistant, mock_auth_success, config_entry) -> None:
+    """Test successful reauthentication."""
+    config_entry.async_start_reauth(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_REAUTH},
+        data={CONF_USERNAME: config_entry.data[CONF_USERNAME]},
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "login"
+
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={**USER_INPUT},
+    )
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "reauth_successful"
+
+
+async def test_options_flow_with_site(hass: HomeAssistant, config_entry_with_site, snapshot: SnapshotAssertion) -> None:
+    """Test options flow when site is available."""
+    result = await hass.config_entries.options.async_init(config_entry_with_site.entry_id)
+    assert result == snapshot
+
+
+async def test_options_flow_without_site(hass: HomeAssistant, config_entry) -> None:
+    """Test options flow fallback when site is not set."""
     result = await hass.config_entries.options.async_init(config_entry.entry_id)
-
-    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "init"
     assert result["errors"] == {"base": "You do not have to login for this entry."}
 
 
-class MockConfigEntry:
-    """Mock config entry for testing purposes."""
+async def test_login_validation_errors(hass: HomeAssistant) -> None:
+    """Test validation errors for empty username/password."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+        data={CONF_USERNAME: "", CONF_PASSWORD: ""},
+    )
 
-    def __init__(self, domain: str, data: dict, options: dict) -> None:
-        self.domain = domain
-        self.data = data
-        self.options = options
-        self.entry_id = "1234"
-
-    def add_to_hass(self, hass: HomeAssistant) -> None:
-        hass.config_entries._entries.append(self)
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}  # fallback error for now
