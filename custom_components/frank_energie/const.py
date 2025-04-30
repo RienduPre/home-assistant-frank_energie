@@ -5,19 +5,27 @@ Constants used in the Frank Energie integration.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Final, Optional
+from typing import Final, Optional
 
 from homeassistant.const import CURRENCY_EURO, UnitOfEnergy, UnitOfVolume
-from python_frank_energie.models import (EnodeChargers, Invoices, MarketPrices,
-                                         MonthSummary, PeriodUsageAndCosts,
-                                         User, UserSites)
+from python_frank_energie.models import (
+    EnodeChargers,
+    Invoices,
+    MarketPrices,
+    MonthSummary,
+    PeriodUsageAndCosts,
+    SmartBatteries,
+    SmartBatterySessions,
+    User,
+    UserSites,
+)
 
 # --- Logger Setup ---
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # --- Domain Information ---
 DOMAIN: Final[str] = "frank_energie"
-VERSION: Final[str] = "2025.4.11"
+VERSION: Final[str] = "2025.4.30"
 ATTRIBUTION: Final[str] = "Data provided by Frank Energie"
 UNIQUE_ID: Final[str] = "frank_energie"
 
@@ -69,9 +77,9 @@ SERVICE_NAME_USER: Final[str] = "User"
 SERVICE_NAME_ACTIVE_DELIVERY_SITE: Final[str] = "Active_Delivery_Site"
 SERVICE_NAME_ELEC_CONN: Final[str] = "Electricity connection"
 SERVICE_NAME_GAS_CONN: Final[str] = "Gas connection"
-SERVICE_NAME_BATTERIES: Final[str] = "Smart Batteries"
-SERVICE_NAME_BATTERY_SESSIONS: Final[str] = "Smart Battery Sessions"
-SERVICE_NAME_ENODE_CHARGERS: Final[str] = "Enode Chargers"
+SERVICE_NAME_BATTERIES: Final[str] = "Batteries"
+SERVICE_NAME_BATTERY_SESSIONS: Final[str] = "Battery Sessions"
+SERVICE_NAME_ENODE_CHARGERS: Final[str] = "Chargers"
 
 # --- Display Constants ---
 DEFAULT_ROUND: Final[int] = 3  # Default display round value for prices
@@ -104,14 +112,11 @@ class DeviceResponseEntry:
     # User Sites information (if available. this replaces delivery site)
     user_sites: Optional[UserSites] = None
 
-    # Delivery site details (if available) (This is replaced by user_sites, shouild be removed)
-    # delivery_site: Optional[DeliverySite] = None
-
     # Smart battery details (if available)
-    smart_batteries: Optional[list[Any]] = None
+    smart_batteries: Optional[SmartBatteries] = None
 
     # Smart battery session details (if available)
-    smart_battery_sessions: Optional[list[Any]] = None
+    smart_battery_sessions: Optional[SmartBatterySessions] = None
 
     # Enode chargers details (if available)
     enode_chargers: Optional[EnodeChargers] = None
@@ -119,3 +124,26 @@ class DeviceResponseEntry:
 
 # Log loading of constants (move to init.py for better practice)
 _LOGGER.debug("Constants loaded for %s", DOMAIN)
+
+# --- Example of how to use the DeviceResponseEntry class ---
+# Example usage of the DeviceResponseEntry class
+# device_response = DeviceResponseEntry(
+#     electricity=MarketPrices(),
+#     gas=MarketPrices(),
+#     month_summary=MonthSummary(),
+#     invoices=Invoices(),
+#     usage=PeriodUsageAndCosts(),
+#     user=User(),
+#     user_sites=UserSites(),
+#     smart_batteries=SmartBatteries(),
+#     smart_battery_sessions=SmartBatterySessions(),
+#     enode_chargers=EnodeChargers(),
+# )
+# This is just a placeholder for the actual data that would be populated
+# in a real-world scenario. The actual data would be fetched from the API
+# and populated into the DeviceResponseEntry instance.
+# The above example is commented out to avoid execution errors since
+# the classes are not fully implemented in this snippet.
+# The DeviceResponseEntry class can be used to hold the response data
+# from the Frank Energie API calls, making it easier to manage and
+# access the data in a structured way.

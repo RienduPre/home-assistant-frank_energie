@@ -2,14 +2,13 @@
 # __init__.py
 
 import logging
+import warnings
 from typing import Any, Optional
 
 from homeassistant.config_entries import ConfigEntry  # type: ignore
-from homeassistant.const import (CONF_ACCESS_TOKEN, CONF_TOKEN,  # type: ignore
-                                 Platform)
+from homeassistant.const import CONF_ACCESS_TOKEN, CONF_TOKEN, Platform  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.helpers.aiohttp_client import \
-    async_get_clientsession  # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
 from homeassistant.helpers.entity import Entity  # type: ignore
 from python_frank_energie import FrankEnergie
 
@@ -47,6 +46,10 @@ async def async_setup_platform(
     Deprecated for new development because Home Assistant encourages the use of
     config entries and UI-driven setup.
     """
+    warnings.warn(
+        "async_setup_platform is deprecated; use config entries instead.",
+        DeprecationWarning
+    )
     _LOGGER.debug("Setting up Frank Energie sensor platform")
     timezone = hass.config.time_zone  # Get the configured time zone
     _LOGGER.debug("Configured Time Zone: %s", timezone)
@@ -70,7 +73,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
-    """Class representing the Frank Energie component."""
+    """Core setup handler for the Frank Energie component."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the Frank Energie component."""
@@ -85,7 +88,10 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
         self._update_unique_id()
 
         # Create API and Coordinator
-        api = self._create_frank_energie_api()
+        _LOGGER.debug("Creating Frank Energie API instance")
+        clientsession = async_get_clientsession(self.hass)
+        api = FrankEnergie(clientsession=clientsession, auth_token=self.entry.data.get(
+            CONF_ACCESS_TOKEN), refresh_token=self.entry.data.get(CONF_TOKEN))
         coordinator = self._create_frank_energie_coordinator(api)
 
         # Awaiting the coroutine method call
@@ -111,9 +117,14 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
                 self.entry, unique_id="frank_energie")
 
     async def _select_site_reference(self, coordinator: FrankEnergieCoordinator) -> None:
+        """Ensure a site reference is selected and stored in entry data."""
         """Select the site reference for the coordinator."""
         _LOGGER.debug("Selecting site reference for coordinator")
-        if self.entry.data.get("site_reference") is None and self.entry.data.get(CONF_ACCESS_TOKEN):
+        """In Home Assistant worden deze attributen als volgt gebruikt:
+entry.data: bevat de gegevens die tijdens de initiële configuratie zijn opgeslagen (via config_flow).
+entry.options: bevat de gegevens die via een options flow zijn aangepast/nageleverd."""
+        access_token = self.entry.options.get(CONF_ACCESS_TOKEN) or self.entry.data.get(CONF_ACCESS_TOKEN)
+        if self.entry.data.get("site_reference") is None and access_token:
             site_reference, title = await self._get_site_reference_and_title(coordinator)
             if not site_reference:
                 raise NoSuitableSitesFoundError(
@@ -135,27 +146,21 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
     async def _get_site_reference_and_title(self,
                                             coordinator: FrankEnergieCoordinator
                                             ) -> tuple[str, str]:
+        """Fetch site reference and human-readable title."""
         _LOGGER.debug("Getting site reference and title for coordinator")
 
-        # Haal de 'Me' gegevens op van de coordinator API
-        # me_data = await coordinator.api.me()
+        # Haal de 'UserSites' gegevens op van de coordinator API
         user_sites_data = await coordinator.api.UserSites()
 
-        # Haal de bezorgsites op uit de 'Me' gegevens
-        # delivery_sites = me_data.deliverySites # remove this line
+        # Haal de bezorgsites op uit de 'UserSites' gegevens
         user_sites = user_sites_data.deliverySites
 
         # Controleer of er bezorgsites zijn gevonden
-        # if not delivery_sites:
-        #     raise NoSuitableSitesFoundError(
-        #         "No suitable delivery sites found for this account")
         if not user_sites:
             raise NoSuitableSitesFoundError(
                 "No suitable delivery sites found for this account")
 
-        # Selecteer de eerste bezorgsite voor nu, je kunt logica toevoegen
-        # om de juiste site te selecteren op basis van voorkeuren
-        # selected_site = delivery_sites[0]
+        # Selecteer de eerste bezorgsite voor nu
         selected_site = user_sites[0]
 
         # Maak een titel op basis van de adresgegevens van de bezorgsite
@@ -166,27 +171,11 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
         # Retourneer de referentie van de site en de titel
         return selected_site.reference, title
 
-    def _create_frank_energie_api(self) -> FrankEnergie:
-        """Create the Frank Energie API instance."""
-        _LOGGER.debug("Creating Frank Energie API instance")
-        return FrankEnergie(
-            clientsession=async_get_clientsession(self.hass),
-            auth_token=self.entry.data.get(CONF_ACCESS_TOKEN),
-            refresh_token=self.entry.data.get(CONF_TOKEN),
-        )
-
     def _create_frank_energie_coordinator(self, api: FrankEnergie
                                           ) -> FrankEnergieCoordinator:
         """Create the Frank Energie Coordinator instance."""
         _LOGGER.debug("Creating Frank Energie Coordinator instance")
         return FrankEnergieCoordinator(self.hass, self.entry, api)
-
-    async def old_async_forward_entry_setups(self) -> None:
-        """Forward entry setups to appropriate platforms."""
-        _LOGGER.debug("Forwarding entry setups to platforms")
-        await self.hass.config_entries.async_forward_entry_setups(self.entry,
-                                                                  PLATFORMS)
-        _LOGGER.debug("Finished forwarding entry setups to platforms 2")
 
     async def _async_forward_entry_setups(self) -> None:
         """Forward entry setups to appropriate platforms."""
@@ -197,7 +186,6 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
         except Exception as e:
             _LOGGER.error("Error forwarding entry setups to platforms: %s", str(e))
             raise
-        _LOGGER.debug("Finished forwarding entry setups to platforms")
 
     async def _save_coordinator_to_hass_data(self,
                                              coordinator: FrankEnergieCoordinator
@@ -210,7 +198,7 @@ class FrankEnergieComponent:  # pylint: disable=too-few-public-methods
     def _remove_entry_from_hass_data(self) -> None:
         """Remove the entry from the Home Assistant data."""
         _LOGGER.debug("Removing entry from Home Assistant data")
-        self.hass.data[DOMAIN].pop(self.entry.entry_id)
+        self.hass.data[DOMAIN].pop(self.entry.entry_id, None)  # Ensure no KeyError if entry_id does not exist
 
 
 class FrankEnergieDiagnosticSensor(Entity):
@@ -224,6 +212,7 @@ class FrankEnergieDiagnosticSensor(Entity):
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
+        # return "Frank Energie Diagnostic Sensor"
         return "frank_energie_diagnostic_sensor"
 
     @property
@@ -232,21 +221,21 @@ class FrankEnergieDiagnosticSensor(Entity):
         return self._state
 
     @property
-    def device_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
-        return {
-            # Add additional attributes if needed
-        }
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return optional state attributes."""
+        return {}
 
     async def async_update(self) -> None:
-        """Update the sensor state."""
+        """Fetch latest state from the Frank Energie API."""
         _LOGGER.debug("Updating FrankEnergieDiagnosticSensor")
         # Implement the logic to update the sensor state
         # You can use the FrankEnergie API client instance (self._frank_energie)
         # to fetch diagnostic data and update the sensor state accordingly
         try:
             self._state = await self._frank_energie.get_diagnostic_data()
-        except Exception as e:
+        except Exception as err:
             # Handle specific exceptions and raise more descriptive ones if necessary
+            _LOGGER.error("Failed to update diagnostic sensor: %s", str(err))
+            self._state = "error"
             raise ValueError(
-                f"Failed to update FrankEnergieDiagnosticSensor: {str(e)}") from e
+                f"Failed to update FrankEnergieDiagnosticSensor: {str(err)}") from err

@@ -2,12 +2,13 @@
 Sensor platform for Frank Energie integration."""
 # sensor.py
 # -*- coding: utf-8 -*-
-# VERSION = "2025.4.11"
+# VERSION = "2025.4.24"
 
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Final, Optional, Union
+from zoneinfo import ZoneInfo
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -32,7 +33,7 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt, utcnow
+from homeassistant.util import dt as dt_util
 
 from .const import (
     API_CONF_URL,
@@ -41,6 +42,7 @@ from .const import (
     COMPONENT_TITLE,
     CONF_COORDINATOR,
     DATA_BATTERIES,
+    DATA_BATTERY_SESSIONS,
     DATA_ELECTRICITY,
     DATA_ENODE_CHARGERS,
     DATA_GAS,
@@ -52,6 +54,7 @@ from .const import (
     DOMAIN,
     ICON,
     SERVICE_NAME_BATTERIES,
+    SERVICE_NAME_BATTERY_SESSIONS,
     SERVICE_NAME_COSTS,
     SERVICE_NAME_ENODE_CHARGERS,
     SERVICE_NAME_PRICES,
@@ -61,12 +64,11 @@ from .const import (
     UNIT_GAS,
     VERSION,
 )
-from .coordinator import FrankEnergieCoordinator
+from .coordinator import FrankEnergieBatterySessionCoordinator, FrankEnergieCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_NAME_UPDATE = "update_data"
-DATA_DELIVERY_SITE: Final[str] = "delivery_site"
+# DATA_DELIVERY_SITE: Final[str] = "delivery_site"
 FORMAT_DATE = "%d-%m-%Y"
 
 
@@ -77,27 +79,26 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
     authenticated: bool = False
     service_name: Optional[str] = SERVICE_NAME_PRICES
     value_fn: Callable[[dict], StateType] = field(default=lambda _: STATE_UNKNOWN)
-    attr_fn: Callable[[dict], dict[str, Union[StateType, list, None]]] = field(default=lambda _: {})
+    attr_fn: Optional[Callable[[dict], dict[str, Union[StateType, list, None]]]] = None
 
     def __init__(
         self,
         key: str,
         name: str,
-        device_class: Optional[str] = None,
+        device_class: Optional[Union[str, SensorDeviceClass]] = None,
         state_class: Optional[str] = None,
         native_unit_of_measurement: Optional[str] = None,
         suggested_display_precision: Optional[int] = None,
         authenticated: Optional[bool] = None,
         service_name: Union[str, None] = None,
         value_fn: Optional[Callable[[dict], StateType]] = None,
-        attr_fn: Optional[Callable[[dict],
-                                   dict[str, Union[StateType, list]]]] = None,
+        attr_fn: Optional[Callable[[dict], dict[str, Union[StateType, list, None]]]] = None,
         entity_registry_enabled_default: bool = True,
         entity_registry_visible_default: bool = True,
         entity_category: Optional[Union[str, EntityCategory]] = None,
         translation_key: Optional[str] = None,
         icon: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__(
             key=key,
             name=name,
@@ -110,7 +111,7 @@ class FrankEnergieEntityDescription(SensorEntityDescription):
         )
         object.__setattr__(self, 'authenticated', authenticated or False)
         object.__setattr__(self, 'service_name', service_name or SERVICE_NAME_PRICES)
-        object.__setattr__(self, 'value_fn', value_fn or STATE_UNKNOWN)
+        object.__setattr__(self, 'value_fn', value_fn or (lambda _: STATE_UNKNOWN))
         object.__setattr__(self, 'attr_fn', attr_fn if attr_fn is not None else lambda data: {})
         self.entity_registry_enabled_default = entity_registry_enabled_default
         self.entity_registry_visible_default = entity_registry_visible_default
@@ -192,6 +193,70 @@ class ChargerSensorDescription:
         return self.authenticated
 
 
+class FrankEnergieBatterySessionSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for smart battery session metrics."""
+
+    def __init__(
+        self,
+        parent_coordinator: FrankEnergieCoordinator,
+        coordinator: FrankEnergieBatterySessionCoordinator,
+        description: FrankEnergieEntityDescription,
+        battery_id: str,
+    ) -> None:
+        super().__init__(parent_coordinator)
+        self.coordinator = coordinator
+        self.entity_description = description
+        battery_data = coordinator.data
+        _LOGGER.debug("Battery data test: %s", battery_data)
+        # self._battery_id = battery_id
+        self._battery_id = battery_data.device_id
+        # self._battery_id = battery_data["deviceId"]
+        self._attr_name = f"{description.name} ({self._battery_id})"
+        self._attr_unique_id = f"{self._battery_id}_{description.key}"
+        self._battery_name = "Slimme batterij"
+
+    @property
+    def available(self) -> bool:
+        """Return if the sensor is available."""
+        return super().available and self.coordinator.data is not None
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        data = self.coordinator.data
+        if not data:
+            return STATE_UNAVAILABLE
+        return self.entity_description.get_state(data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes."""
+        data = self.coordinator.data
+        if not data:
+            return {}
+        try:
+            attributes = self.entity_description.get_attributes(data)
+            return attributes if attributes else {}
+        except Exception as e:
+            _LOGGER.error("Failed to get attributes: %s", e)
+            return {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information for the battery."""
+        return DeviceInfo(
+            # identifiers=device_info_identifiers,
+            identifiers={(DOMAIN, f"{self.entity_description.service_name} {self._battery_id}")},
+            name=f"{COMPONENT_TITLE} - Smart Battery {self._battery_id}",
+            translation_key=f"{COMPONENT_TITLE} - {self.entity_description.service_name}",
+            manufacturer=COMPONENT_TITLE,
+            model=self.entity_description.service_name,
+            entry_type=DeviceEntryType.SERVICE,
+            configuration_url=API_CONF_URL,
+            sw_version=VERSION,
+        )
+
+
 def format_user_name(data: dict) -> Optional[str]:
     """
     Formats the user's name from provided data by concatenating the first and last name.
@@ -258,6 +323,136 @@ STATIC_BATTERY_SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
     ),
 )
 
+BATTERY_SESSION_SENSOR_DESCRIPTIONS: Final[tuple[FrankEnergieEntityDescription, ...]] = (
+    FrankEnergieEntityDescription(
+        key="device_id",
+        name="Device ID",
+        icon="mdi:battery",
+        native_unit_of_measurement=None,
+        entity_category=None,
+        state_class=None,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.device_id,
+    ),
+
+    FrankEnergieEntityDescription(
+        key="period_start_date",
+        name="Period Start Date",
+        icon="mdi:calendar-start",
+        native_unit_of_measurement=None,
+        entity_category=None,
+        state_class=None,
+        device_class=SensorDeviceClass.TIMESTAMP,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: (
+            datetime.strptime(data.period_start_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Europe/Amsterdam"))
+            if data.period_start_date
+            else None
+        ),
+    ),
+
+    FrankEnergieEntityDescription(
+        key="period_end_date",
+        name="Period End Date",
+        icon="mdi:calendar-end",
+        native_unit_of_measurement=None,
+        entity_category=None,
+        state_class=None,
+        device_class=SensorDeviceClass.TIMESTAMP,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: (
+            datetime.strptime(data.period_end_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Europe/Amsterdam"))
+            if data.period_end_date
+            else None
+        ),
+    ),
+    FrankEnergieEntityDescription(
+        key="period_trade_index",
+        name="Period Trade Index",
+        icon="mdi:numeric",
+        native_unit_of_measurement=None,
+        entity_category=None,
+        state_class="measurement",
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_trade_index,
+    ),
+    FrankEnergieEntityDescription(
+        key="period_trading_result",
+        name="Period Trading Result",
+        icon="mdi:currency-eur",
+        native_unit_of_measurement=CURRENCY_EURO,
+        suggested_display_precision=2,
+        entity_category=None,
+        state_class="measurement",
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_trading_result,
+    ),
+    FrankEnergieEntityDescription(
+        key="period_total_result",
+        name="Period Total Result",
+        icon="mdi:currency-eur",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=CURRENCY_EURO,
+        suggested_display_precision=2,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_total_result,
+        attr_fn=lambda data: {
+            "device_id": data.device_id,
+            "period_start_date": data.period_start_date,
+            "period_end_date": data.period_end_date,
+            "period_trade_index": data.period_trade_index,
+            "period_trading_result": data.period_trading_result,
+            "period_total_result": data.period_total_result,
+            "period_imbalance_result": data.period_imbalance_result,
+            "period_epex_result": data.period_epex_result,
+            "period_frank_slim": data.period_frank_slim,
+            "sessions": [
+                {
+                    "date": s.date,
+                    "trading_result": s.trading_result,
+                    "cumulative_trading_result": s.cumulative_trading_result,
+                }
+                for s in data.sessions
+            ],
+        }
+    ),
+    FrankEnergieEntityDescription(
+        key="period_imbalance_result",
+        name="Period Imbalance Result",
+        icon="mdi:currency-eur",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=CURRENCY_EURO,
+        suggested_display_precision=2,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_imbalance_result,
+        # attr_fn=lambda data: {"imbalance": data.get("periodImbalanceResult", 0.0)},
+    ),
+    FrankEnergieEntityDescription(
+        key="period_epex_result",
+        name="Period EPEX Result",
+        icon="mdi:currency-eur",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=CURRENCY_EURO,
+        suggested_display_precision=2,
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_epex_result,
+        # attr_fn=lambda data: {"epex": data.get("periodEpexResult", 0.0)},
+    ),
+    FrankEnergieEntityDescription(
+        key="frank_slim_bonus",
+        name="Frank Slim Bonus",
+        icon="mdi:currency-eur",
+        native_unit_of_measurement=CURRENCY_EURO,
+        suggested_display_precision=2,
+        state_class="measurement",
+        service_name=SERVICE_NAME_BATTERY_SESSIONS,
+        value_fn=lambda data: data.period_frank_slim,
+    ),
+)
+
 SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
     FrankEnergieEntityDescription(
         key="elec_markup",
@@ -266,7 +461,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.total
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_ELECTRICITY].asdict(
@@ -280,6 +475,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {
@@ -293,6 +489,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_with_tax
             if data[DATA_ELECTRICITY].current_hour else None
@@ -308,6 +505,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_tax
             if data[DATA_ELECTRICITY].current_hour else None
@@ -324,6 +522,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data:
             data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
         if data[DATA_ELECTRICITY].current_hour else None,
@@ -336,6 +535,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=5,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data:
             data[DATA_ELECTRICITY].current_hour.energy_tax_price
         if data[DATA_ELECTRICITY].current_hour else None,
@@ -348,6 +548,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=6,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.sourcing_markup_price
             + data[DATA_ELECTRICITY].current_hour.energy_tax_price  # noqa: W503
@@ -361,6 +562,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=6,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].current_hour.market_price_with_tax
         ) if data.get(DATA_ELECTRICITY) and data[DATA_ELECTRICITY].current_hour else None,
@@ -373,6 +575,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.total
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("total")}
@@ -384,6 +587,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {"prices": data[DATA_GAS].asdict("market_price")}
@@ -395,6 +599,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price_with_tax
         if data[DATA_GAS].current_hour else None,
         attr_fn=lambda data: {
@@ -408,6 +613,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price_tax
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -419,6 +625,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.sourcing_markup_price
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -430,6 +637,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.energy_tax_price
         if data[DATA_GAS].current_hour else None,
         entity_registry_enabled_default=True
@@ -441,6 +649,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].today_min.total
         if data[DATA_GAS].today_min else None,
         attr_fn=lambda data: {ATTR_TIME: data[DATA_GAS].today_min.date_from}
@@ -450,6 +659,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Highest gas price today (All-in)",
         translation_key="gas_max",
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
         value_fn=lambda data: data[DATA_GAS].today_max.total
@@ -463,7 +673,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=4,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_min.total
         if data[DATA_ELECTRICITY].today_min else None,
         attr_fn=lambda data: {
@@ -476,7 +686,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=4,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_max.total
         if data[DATA_ELECTRICITY].today_max else None,
         attr_fn=lambda data: {
@@ -489,7 +699,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].today_avg
         ),
@@ -505,6 +715,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_previoushour",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].previous_hour.total
             if data[DATA_ELECTRICITY].previous_hour else None
@@ -517,6 +729,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_nexthour",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].next_hour.total
             if data[DATA_ELECTRICITY].next_hour else None
@@ -570,6 +784,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].all_min.total,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].all_min.date_from}
     ),
@@ -580,6 +796,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         native_unit_of_measurement=UNIT_ELECTRICITY,
         value_fn=lambda data: data[DATA_ELECTRICITY].all_max.total,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].all_max.date_from}
     ),
@@ -588,9 +806,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Lowest electricity price tomorrow (All-in)",
         translation_key="elec_tomorrow_min",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_min.total
         if data[DATA_ELECTRICITY].tomorrow_min else None,
-        suggested_display_precision=4,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].tomorrow_min.date_from}
         if data[DATA_ELECTRICITY].tomorrow_min else {}
@@ -600,9 +820,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Highest electricity price tomorrow (All-in)",
         translation_key="elec_tomorrow_max",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_max.total
         if data[DATA_ELECTRICITY].tomorrow_max else None,
-        suggested_display_precision=4,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].tomorrow_max.date_from}
         if data[DATA_ELECTRICITY].tomorrow_max else {}
@@ -612,8 +834,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Lowest electricity price upcoming hours (All-in)",
         translation_key="elec_upcoming_min",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_min.total,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_min.total,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].upcoming_min.date_from}
     ),
@@ -622,8 +846,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Highest electricity price upcoming hours (All-in)",
         translation_key="elec_upcoming_max",
         native_unit_of_measurement=UNIT_ELECTRICITY,
-        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_max.total,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_max.total,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_ELECTRICITY].upcoming_max.date_from}
     ),
@@ -633,6 +859,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_today_including_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_avg,
         entity_registry_enabled_default=True
     ),
@@ -642,6 +870,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_today_including_tax_and_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_tax_markup_avg,
         entity_registry_enabled_default=True
     ),
@@ -650,6 +880,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity market price today",
         translation_key="average_electricity_market_price_today",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].today_market_avg,
         suggested_display_precision=3
     ),
@@ -659,7 +891,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_tomorrow_including_tax_and_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
-        # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax_and_markup
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.market_price_with_tax_and_markup
         if data[DATA_ELECTRICITY].tomorrow_avg else None,
     ),
@@ -669,6 +902,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_tomorrow_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=3,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price
         # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.total
@@ -682,6 +916,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_tomorrow_including_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_price_including_tax
         # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.market_price_with_tax
         if data[DATA_ELECTRICITY].tomorrow_avg else None,
@@ -692,6 +928,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_market_price_tomorrow",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_average_market_price
         # value_fn=lambda data: data[DATA_ELECTRICITY].tomorrow_avg.market_price
         if data[DATA_ELECTRICITY].tomorrow_avg else None,
@@ -702,6 +940,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_market_price_upcoming",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.market_price
         if data[DATA_ELECTRICITY].upcoming_avg else None,
         attr_fn=lambda data: {'upcoming_prices': data[DATA_ELECTRICITY].asdict(
@@ -715,11 +955,12 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_upcoming_market",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_avg.total
         if data[DATA_ELECTRICITY].upcoming_avg else None,
         attr_fn=lambda data: {'upcoming_prices': data[DATA_ELECTRICITY].asdict(
             'total', upcoming_only=True, timezone="Europe/Amsterdam")},
-        # attr_fn=lambda data: data[DATA_ELECTRICITY].upcoming_attr,
     ),
     FrankEnergieEntityDescription(
         key="elec_all",
@@ -727,6 +968,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_all",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].all_avg.total
         if data[DATA_ELECTRICITY].all_avg else None,
         attr_fn=lambda data: {'all_prices': data[DATA_ELECTRICITY].asdict(
@@ -739,9 +982,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Current electricity price including tax and markup",
         translation_key="current_electricity_price_incl_tax_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].current_hour.market_price_including_tax_and_markup
         if data[DATA_ELECTRICITY].current_hour else None,
-        suggested_display_precision=3,
         attr_fn=lambda data: {'prices': data[DATA_ELECTRICITY].asdict(
             'market_price_including_tax_and_markup', timezone="Europe/Amsterdam")}
         if data[DATA_ELECTRICITY].current_hour else {},
@@ -753,6 +998,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_average_price,
         # value_fn=lambda data: data[DATA_GAS].tomorrow_avg.total,
         entity_registry_enabled_default=True
@@ -763,6 +1010,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tax_markup",
         suggested_display_precision=3,
         native_unit_of_measurement=UNIT_GAS,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].current_hour.market_price_including_tax_and_markup
         if data[DATA_ELECTRICITY].current_hour else None,
         attr_fn=lambda data: {'prices': data[DATA_GAS].asdict(
@@ -798,6 +1047,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="elec_previoushour_market",
         suggested_display_precision=3,
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].previous_hour.market_price
         if data[DATA_ELECTRICITY].previous_hour else None,
         entity_registry_enabled_default=True
@@ -806,8 +1057,10 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         key="elec_nexthour_market",
         name="Next hour electricity market price",
         translation_key="elec_nexthour_market",
-        suggested_display_precision=3,
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].next_hour.market_price
         if data[DATA_ELECTRICITY].next_hour else None,
         entity_registry_enabled_default=True
@@ -818,6 +1071,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_previoushour_all_in",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].previous_hour.total
         if data[DATA_GAS].previous_hour else None,
         entity_registry_enabled_default=True
@@ -828,6 +1083,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_nexthour_all_in",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].next_hour.total
         if data[DATA_GAS].next_hour else None,
         entity_registry_enabled_default=True
@@ -838,6 +1095,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_previoushour_market",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].previous_hour.market_price
         if data[DATA_GAS].previous_hour else None,
         entity_registry_enabled_default=True
@@ -848,6 +1107,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_nexthour_market",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].next_hour.market_price
         if data[DATA_GAS].next_hour else None,
         entity_registry_enabled_default=True
@@ -858,6 +1119,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market
     ),
     FrankEnergieEntityDescription(
@@ -866,6 +1129,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market_tax",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax
     ),
     FrankEnergieEntityDescription(
@@ -874,6 +1139,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_avg_market_tax_markup",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_prices_market_tax_markup
     ),
     FrankEnergieEntityDescription(
@@ -882,6 +1149,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_today_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].today_prices_total
     ),
     FrankEnergieEntityDescription(
@@ -889,6 +1158,9 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average gas price tomorrow (All-in)",
         translation_key="gas_tomorrow_avg_all_in",
         native_unit_of_measurement=UNIT_GAS,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_prices_total
     ),
     FrankEnergieEntityDescription(
@@ -897,6 +1169,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_min",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_min.total
         if data[DATA_GAS].tomorrow_min
         else None,
@@ -912,6 +1186,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_tomorrow_max",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].tomorrow_max.total
         if data[DATA_GAS].tomorrow_max
         else None,
@@ -927,6 +1203,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_market_upcoming",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].upcoming_avg.market_price
         if data[DATA_GAS].upcoming_avg else None,
         attr_fn=lambda data: {
@@ -940,6 +1218,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_upcoming_min",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].upcoming_min.total,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_GAS].upcoming_min.date_from
@@ -952,6 +1232,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_upcoming_max",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=4,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_GAS].upcoming_max.total,
         attr_fn=lambda data: {
             ATTR_TIME: data[DATA_GAS].upcoming_max.date_from
@@ -963,6 +1245,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="average_electricity_price_upcoming_all_in",
         native_unit_of_measurement=UNIT_ELECTRICITY,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (
             data[DATA_ELECTRICITY].upcoming_avg.total
             if data[DATA_ELECTRICITY].upcoming_avg else None
@@ -998,9 +1282,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price (upcoming, market)",
         translation_key="average_electricity_price_upcoming_market",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_avg
         if data[DATA_ELECTRICITY].upcoming_avg else None,
-        suggested_display_precision=3,
         attr_fn=lambda data: {
             'average_electricity_price_upcoming_market': data[DATA_ELECTRICITY].upcoming_market_avg,
             'upcoming_market_prices': data[DATA_ELECTRICITY].asdict('marketPrice', upcoming_only=True)
@@ -1011,9 +1297,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price (upcoming, market and tax)",
         translation_key="average_electricity_price_upcoming_market_tax",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_tax_avg
         if data[DATA_ELECTRICITY].upcoming_avg else None,
-        suggested_display_precision=3,
         attr_fn=lambda data: {
             'average_electricity_price_upcoming_market_tax': data[DATA_ELECTRICITY].upcoming_market_tax_avg,
             'upcoming_market_tax_prices': data[DATA_ELECTRICITY].asdict('market_price_with_tax', upcoming_only=True)
@@ -1024,9 +1312,11 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Average electricity price (upcoming, market, tax and markup)",
         translation_key="average_electricity_price_upcoming_market_tax_markup",
         native_unit_of_measurement=UNIT_ELECTRICITY,
+        suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg
         if data[DATA_ELECTRICITY] else None,
-        suggested_display_precision=3,
         attr_fn=lambda data: {
             'average_electricity_price_upcoming_market_tax_markup':
                 data[DATA_ELECTRICITY].upcoming_market_tax_markup_avg}
@@ -1038,6 +1328,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_markup_before6am",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: sum(
             data[DATA_GAS].today_gas_before6am) / len(data[DATA_GAS].today_gas_before6am),
         attr_fn=lambda data: {"Number of hours": len(
@@ -1049,6 +1341,8 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         translation_key="gas_markup_after6am",
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: sum(
             data[DATA_GAS].today_gas_after6am) / len(data[DATA_GAS].today_gas_after6am),
         attr_fn=lambda data: {"Number of hours": len(
@@ -1059,7 +1353,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Gas price tomorrow before 6AM (All-in)",
         translation_key="gas_price_tomorrow_before6am_allin",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         value_fn=lambda data: (sum(data[DATA_GAS].tomorrow_gas_before6am) / len(
@@ -1073,7 +1367,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Gas price tomorrow after 6AM (All-in)",
         translation_key="gas_price_tomorrow_after6am_allin",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UNIT_GAS,
         suggested_display_precision=3,
         value_fn=lambda data: (sum(data[DATA_GAS].tomorrow_gas_after6am) / len(
@@ -1273,7 +1567,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         name="Total costs",
         translation_key="total_costs",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=CURRENCY_EURO,
         suggested_display_precision=2,
         authenticated=True,
@@ -1292,7 +1586,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
                     "Last meter reading": "lastMeterReadingDate",
                 }.items()
                 if (value := getattr(data[DATA_USER], field, None))
-                and (parsed_date := dt.parse_date(value)) is not None
+                and (parsed_date := dt_util.parse_date(value)) is not None
             },
         },
     ),
@@ -1361,7 +1655,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
         value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
-            dt.now().year - 1)
+            dt_util.now().year - 1)
         if data[DATA_INVOICES].allPeriodsInvoices
         else None
     ),
@@ -1376,7 +1670,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         authenticated=True,
         service_name=SERVICE_NAME_COSTS,
         value_fn=lambda data: data[DATA_INVOICES].calculate_average_costs_per_month(
-            dt.now().year)
+            dt_util.now().year)
         if data[DATA_INVOICES].allPeriodsInvoices
         else None
     ),
@@ -1711,7 +2005,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: (
             parsed_date.strftime(FORMAT_DATE)
-            if (parsed_date := dt.parse_date(data[DATA_USER_SITES].deliveryStartDate)) is not None
+            if (parsed_date := dt_util.parse_date(data[DATA_USER_SITES].deliveryStartDate)) is not None
             else None
         )
     ),
@@ -1725,7 +2019,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda data: (
             parsed_date.strftime(FORMAT_DATE)
-            if (parsed_date := dt.parse_date(data[DATA_USER_SITES].deliveryEndDate)) is not None
+            if (parsed_date := dt_util.parse_date(data[DATA_USER_SITES].deliveryEndDate)) is not None
             else None
         )
     ),
@@ -1738,7 +2032,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: (
             parsed_date.strftime(FORMAT_DATE)
-            if (parsed_date := dt.parse_date(data[DATA_USER_SITES].firstMeterReadingDate)) is not None
+            if (parsed_date := dt_util.parse_date(data[DATA_USER_SITES].firstMeterReadingDate)) is not None
             else None
         )
     ),
@@ -1751,7 +2045,7 @@ SENSOR_TYPES: tuple[FrankEnergieEntityDescription, ...] = (
         service_name=SERVICE_NAME_USER,
         value_fn=lambda data: (
             parsed_date.strftime(FORMAT_DATE)
-            if (parsed_date := dt.parse_date(data[DATA_USER_SITES].lastMeterReadingDate)) is not None
+            if (parsed_date := dt_util.parse_date(data[DATA_USER_SITES].lastMeterReadingDate)) is not None
             else None
         )
     ),
@@ -1903,6 +2197,8 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
         # if description.translation_key:
         #    self._attr_name = _(description.translation_key)
         self._attr_unique_id = f"{entry.unique_id}.{description.key}"
+        # self._attr_unique_id = f"{entry.unique_id}.{description.key}.{description.service_name}.{description.sensor_type}"
+        # self._attr_unique_id = f"{entry.unique_id}.{description.key}.{entry.entry_id}.{description.service_name}.{description.sensor_type}"
         # Do not set extra identifier for default service, backwards compatibility
         device_info_identifiers: set[tuple[str, str]] = (
             {(DOMAIN, f"{entry.entry_id}")}
@@ -1955,7 +2251,7 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
             self._unsub_update = None
 
         # Schedule the next update at exactly the next whole hour sharp
-        next_update_time = utcnow().replace(minute=0, second=0) + timedelta(hours=1)
+        next_update_time = datetime.now(timezone.utc).replace(minute=0, second=0) + timedelta(hours=1)
         self._unsub_update = event.async_track_point_in_utc_time(
             self.hass,
             self._update_job,
@@ -1986,15 +2282,22 @@ class FrankEnergieSensor(CoordinatorEntity, SensorEntity):
 class EnodeChargersData:
     """Class to hold Enode charger data."""
 
-    def __init__(self, chargers: list[Any]):
+    def __init__(self, chargers: list[Any]) -> None:
         self.chargers = chargers
 
 
-def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, index) -> list[FrankEnergieEntityDescription]:
+def _build_dynamic_enode_sensor_descriptions(
+    enode_data: EnodeChargersData,
+    index: int
+) -> list[FrankEnergieEntityDescription]:
     """Build dynamic Enode charger sensor descriptions."""
-    descriptions = []
 
-    for i, charger in enumerate(enode_data.chargers):
+    descriptions: list[FrankEnergieEntityDescription] = []
+    chargers = enode_data.chargers
+    if not isinstance(chargers, list) or not chargers:
+        return descriptions
+
+    for i, charger in enumerate(chargers):
         descriptions.extend([
             FrankEnergieEntityDescription(
                 key=f"enode_charger_id_{i+1}",
@@ -2054,10 +2357,8 @@ def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, inde
                 authenticated=True,
                 service_name=SERVICE_NAME_ENODE_CHARGERS,
                 icon="mdi:flash",
-                value_fn=lambda data, i=i: {
-                    data[DATA_ENODE_CHARGERS].chargers[i].can_smart_charge
-                    if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers[i] else None
-                },
+                value_fn=lambda data, i=i: data[DATA_ENODE_CHARGERS].chargers[i].can_smart_charge
+                if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers[i] else None,
                 attr_fn=lambda data, i=i: {
                     "chargers": data[DATA_ENODE_CHARGERS].chargers[i]
                     if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers[i] else {}
@@ -2066,11 +2367,11 @@ def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, inde
             FrankEnergieEntityDescription(
                 key=f"charge_capacity_{i+1}",
                 name=f"Charger {i+1} Charge Capacity",
-                state_class=SensorStateClass.MEASUREMENT,
                 native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                 authenticated=True,
                 service_name=SERVICE_NAME_ENODE_CHARGERS,
                 icon="mdi:flash",
+                device_class=SensorDeviceClass.ENERGY,
                 value_fn=lambda data, i=i: (
                     data[DATA_ENODE_CHARGERS].chargers[i].charge_settings.capacity
                     if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers[i] else None
@@ -2174,6 +2475,7 @@ def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, inde
                 authenticated=True,
                 service_name=SERVICE_NAME_ENODE_CHARGERS,
                 icon="mdi:flash",
+                device_class=SensorDeviceClass.POWER,
                 value_fn=lambda data, i=i: (
                     data[DATA_ENODE_CHARGERS].chargers[i].charge_state.charge_rate
                     if DATA_ENODE_CHARGERS in data and data[DATA_ENODE_CHARGERS].chargers[i] else None
@@ -2282,13 +2584,21 @@ def _build_dynamic_enode_sensor_descriptions(enode_data: EnodeChargersData, inde
 
 
 class SmartBatteriesData:
-    """Class to hold Smart Batteries data."""
+    """Class to hold and manage Smart Batteries data."""
 
     def __init__(self, batteries: list[Any]):
+        """
+        Initialize SmartBatteriesData.
+
+        :param batteries: List of battery dictionaries or _SmartBattery instances.
+        """
         self.batteries = batteries
 
-    class SmartBattery:
+    class _SmartBattery:
+        """Internal representation of a Smart Battery."""
+
         def __init__(self, brand: str, capacity: float, external_reference: str, id: str, max_charge_power: float, max_discharge_power: float, provider: str, created_at: Any, updated_at: Any):
+            """Initialize a Smart Battery instance."""
             self.brand = brand
             self.capacity = capacity
             self.external_reference = external_reference
@@ -2296,93 +2606,38 @@ class SmartBatteriesData:
             self.max_charge_power = max_charge_power
             self.max_discharge_power = max_discharge_power
             self.provider = provider
-            self.created_at = created_at
-            self.updated_at = updated_at
+            self.created_at = self._validate_datetime(created_at, "created_at")
+            self.updated_at = self._validate_datetime(updated_at, "updated_at")
 
-        def __repr__(self):
+        @staticmethod
+        def _validate_datetime(value: Any, field_name: str) -> datetime:
+            """
+            Validate that a value is a timezone-aware datetime object.
+
+            :param value: The value to validate.
+            :param field_name: Name of the field for error reporting.
+            :return: A valid datetime object.
+            :raises ValueError: If value is not a valid datetime.
+            """
+            if not isinstance(value, datetime):
+                raise ValueError("Field '%s' must be a datetime object, got %s" % (field_name, type(value).__name__))
+            if value.tzinfo is None:
+                raise ValueError("Field '%s' must be timezone-aware" % field_name)
+            return value
+
+        def __repr__(self) -> str:
             return f"SmartBattery(brand={self.brand}, capacity={self.capacity}, id={self.id})"
 
-    def get_smart_batteries(self) -> list[SmartBattery]:
-        return [self.SmartBattery(**b) if isinstance(b, dict) else b for b in self.batteries]
+    def get_smart_batteries(self) -> list[_SmartBattery]:
+        """Return the list of parsed SmartBattery objects."""
+        return [self._SmartBattery(**b) if isinstance(b, dict) else b for b in self.batteries]
 
     def get_battery_count(self) -> int:
         """Return the number of smart batteries."""
         return len(self.batteries)
 
 
-def _build_dynamic_smart_batteries_descriptions(batteries_data: SmartBatteriesData) -> list[FrankEnergieEntityDescription]:
-    """Build dynamic entity descriptions for smart batteries."""
-    descriptions = []
-
-    # Safely get the list of batteries from the data
-    smart_batteries = getattr(batteries_data, "smart_batteries", [])
-
-    for i, battery in enumerate(smart_batteries):
-        # Get battery info safely (handles both dict and object)
-        battery_id = battery.id if hasattr(battery, "id") else battery.get("id")
-        brand = battery.brand if hasattr(battery, "brand") else battery.get("brand", "Unknown")
-
-        base_key = f"smart_battery_{i}"
-        name_prefix = f"{brand} Battery"
-
-        # Create a helper function to extract battery attributes from data updates
-        def create_value_fn(attr, battery_id=battery_id):
-            def value_fn(data):
-                # Try to get the smart_batteries list from data
-                if hasattr(data, "get"):
-                    batteries_obj = data.get("smart_batteries", [])
-                elif hasattr(data, "smart_batteries"):
-                    batteries_obj = data.smart_batteries
-                else:
-                    return None
-
-                # Find the matching battery
-                for b in batteries_obj:
-                    b_id = b.id if hasattr(b, "id") else b.get("id") if isinstance(b, dict) else None
-                    if b_id == battery_id:
-                        # Extract the attribute safely
-                        if isinstance(b, dict):
-                            value = b.get(attr)
-                        else:
-                            value = getattr(b, attr, None)
-
-                        # Special handling for datetime objects
-                        if attr in ["created_at", "updated_at"] and isinstance(value, datetime):
-                            return value.isoformat()
-                        return value
-                return None
-            return value_fn
-
-        # Define all battery attributes to monitor
-        battery_attrs = [
-            ("brand", "Brand", "mdi:battery"),
-            ("capacity", "Capacity (kWh)", "mdi:battery-charging"),
-            ("external_reference", "External Reference", "mdi:identifier"),
-            ("id", "ID", "mdi:fingerprint"),
-            ("max_charge_power", "Max Charge Power (kW)", "mdi:flash"),
-            ("max_discharge_power", "Max Discharge Power (kW)", "mdi:flash-off"),
-            ("provider", "Provider", "mdi:factory"),
-            ("created_at", "Created At", "mdi:calendar-clock"),
-            ("updated_at", "Updated At", "mdi:calendar-edit"),
-        ]
-
-        # Create an entity description for each attribute
-        for attr, label, icon in battery_attrs:
-            descriptions.append(
-                FrankEnergieEntityDescription(
-                    key=f"{base_key}_{attr}",
-                    name=f"{name_prefix} {label}",
-                    authenticated=True,
-                    service_name=SERVICE_NAME_BATTERIES,
-                    icon=icon,
-                    value_fn=create_value_fn(attr)
-                )
-            )
-
-    return descriptions
-
-
-def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatteriesData.SmartBattery]) -> list[FrankEnergieEntityDescription]:
+def _build_dynamic_smart_batteries_descriptions(batteries: SmartBatteriesData) -> list[FrankEnergieEntityDescription]:
     """Build dynamic entity descriptions for all smart batteries.
 
     Args:
@@ -2392,8 +2647,9 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
         List of FrankEnergieEntityDescription objects.
     """
     descriptions: list[FrankEnergieEntityDescription] = []
+
     _LOGGER.debug("Building dynamic smart batteries descriptions...")
-    _LOGGER.debug(batteries)
+    _LOGGER.debug("Raw batteries data: %s", batteries)
     # Check if batteries is empty
     if not batteries:
         _LOGGER.debug("No batteries found.")
@@ -2403,34 +2659,21 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
     if not isinstance(batteries, list):
         _LOGGER.error("Batteries data is not a list.")
         return descriptions
+    first_type = type(batteries[0])
+    _LOGGER.debug("First battery type: %s", first_type)
     # Check if batteries contain SmartBattery instances
-    if not all(isinstance(b, SmartBatteriesData.SmartBattery) for b in batteries):
-        _LOGGER.error("Not all items in batteries are SmartBattery instances.")
-        return descriptions
-
-    # Helper function to safely get attributes from either objects or dictionaries
-    def safe_get_attr(data, battery_id, attr):
-        """Get attribute from the correct battery, handling both dict and object types."""
-        for b in data.get("batteries", []):
-            b_id = getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")
-            if b_id == battery_id:
-                return getattr(b, attr, None) if not isinstance(b, dict) else b.get(attr)
-        return None
+    # if not all(isinstance(b, SmartBatteries.SmartBattery) for b in batteries):
+    #    _LOGGER.error("Not all items in batteries are SmartBattery instances.")
+    #    return
 
     for i, battery in enumerate(batteries):
-        base_key = f"smart_battery_{i}"
-        name_prefix = f"{battery.brand} Battery"
-        battery_id = battery.id
+        if not hasattr(battery, "id"):
+            _LOGGER.warning("Battery at index %d has no 'id' attribute; skipping.", i)
+            continue
 
-        def _get_battery(data: dict) -> SmartBatteriesData.SmartBattery | None:
-            """Safely extract the correct battery from data dict."""
-            for b in data.get("batteries", []):
-                if isinstance(b, dict):
-                    if b.get("id") == battery_id:
-                        return b
-                elif hasattr(b, "id") and b.id == battery_id:
-                    return b
-            return None
+        base_key = f"smart_battery_{i}"
+        name_prefix = f"Battery {i+1}"
+        battery_id = battery.id
 
         descriptions.extend([
             FrankEnergieEntityDescription(
@@ -2439,14 +2682,7 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:battery",
-                value_fn=lambda data, _id=battery.id: next(
-                    (
-                        getattr(b, "brand", None) if not isinstance(b, dict) else b.get("brand")
-                        for b in data.get("batteries", [])
-                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                    ),
-                    None,
-                ),
+                value_fn=lambda data, i=i: battery.brand,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_capacity",
@@ -2454,15 +2690,9 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:battery-charging",
-                # Handle both dictionary and object cases
-                value_fn=lambda data, _id=battery.id: next(
-                    (
-                        b.capacity if hasattr(b, "capacity") else b.get("capacity")
-                        for b in data.get("batteries", [])
-                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                    ),
-                    None,
-                ),
+                device_class=SensorDeviceClass.ENERGY,
+                native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                value_fn=lambda data, _id=battery.id: battery.capacity,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_external_reference",
@@ -2470,28 +2700,7 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:identifier",
-                value_fn=lambda data, _id=battery.id: next(
-                    (
-                        getattr(b, "external_reference", None) if not isinstance(
-                            b, dict) else b.get("external_reference")
-                        for b in data.get("batteries", [])
-                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                    ),
-                    None,
-                ),
-                attr_fn=lambda data, _id=battery.id: next(
-                    (
-                        {
-                            "external_reference": b.external_reference
-                            if not isinstance(b, dict) else b.get("external_reference")
-                            for b in data.get("batteries", [])
-                            if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                        }
-                        for b in data.get("batteries", [])
-                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                    ),
-                    None,
-                ),
+                value_fn=lambda data, _id=battery.id: battery.external_reference,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_id",
@@ -2499,7 +2708,7 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:fingerprint",
-                value_fn=lambda data, _id=battery_id: safe_get_attr(data, _id, "id"),
+                value_fn=lambda data, _id=battery_id: battery.id,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_max_charge_power",
@@ -2507,30 +2716,9 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:flash",
-                value_fn=lambda data, _id=battery_id: safe_get_attr(data, _id, "max_charge_power"),
-            ),
-            FrankEnergieEntityDescription(
-                key=f"{base_key}_max_charge_power2",
-                name=f"{name_prefix} Max Charge Power2 (kW)",
-                authenticated=True,
-                service_name=SERVICE_NAME_BATTERIES,
-                icon="mdi:flash",
-                value_fn=lambda data, _id=battery.id: next(
-                    (
-                        b.max_charge_power if hasattr(b, "max_charge_power") else b.get("max_charge_power")
-                        for b in data.get("batteries", [])
-                        if (getattr(b, "id", None) if not isinstance(b, dict) else b.get("id")) == _id
-                    ),
-                    None,
-                ),
-            ),
-            FrankEnergieEntityDescription(
-                key=f"{base_key}_max_discharge_power",
-                name=f"{name_prefix} Max Discharge Power (kW)",
-                authenticated=True,
-                service_name=SERVICE_NAME_BATTERIES,
-                icon="mdi:flash-off",
-                value_fn=lambda b=battery: b.max_discharge_power,
+                device_class=SensorDeviceClass.POWER,
+                native_unit_of_measurement=UnitOfPower.KILO_WATT,
+                value_fn=lambda data, _id=battery.id: battery.max_charge_power,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_provider",
@@ -2538,7 +2726,7 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:factory",
-                value_fn=battery.provider,
+                value_fn=lambda data, _id=battery.id: battery.provider,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_created_at",
@@ -2546,15 +2734,17 @@ def old_build_dynamic_smart_batteries_descriptions(batteries: list[SmartBatterie
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
                 icon="mdi:calendar-clock",
-                value_fn=lambda b=battery: b.created_at.isoformat() if isinstance(b.created_at, datetime) else b.created_at,
+                device_class=SensorDeviceClass.TIMESTAMP,
+                value_fn=lambda data, _id=battery.id: battery.created_at,
             ),
             FrankEnergieEntityDescription(
                 key=f"{base_key}_updated_at",
                 name=f"{name_prefix} Updated At",
                 authenticated=True,
                 service_name=SERVICE_NAME_BATTERIES,
-                icon="mdi:calendar-edit",
-                value_fn=lambda b=battery: b.updated_at.isoformat() if isinstance(b.updated_at, datetime) else b.updated_at,
+                icon="mdi:calendar-clock",
+                device_class=SensorDeviceClass.TIMESTAMP,
+                value_fn=lambda data, _id=battery.id: battery.updated_at,
             ),
         ])
 
@@ -2570,10 +2760,46 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Frank Energie sensors for entry: %s", config_entry.entry_id)
 
     coordinator: FrankEnergieCoordinator = hass.data[DOMAIN][config_entry.entry_id][CONF_COORDINATOR]
+    session_coordinator: FrankEnergieBatterySessionCoordinator | None = (
+        hass.data[DOMAIN][config_entry.entry_id].get(DATA_BATTERY_SESSIONS)
+    )
+
+    if not session_coordinator:
+        _LOGGER.warning("Battery session coordinator not found for entry %s", config_entry.entry_id)
+
+    if DATA_BATTERY_SESSIONS in hass.data[DOMAIN][config_entry.entry_id]:
+        session_coordinator = hass.data[DOMAIN][config_entry.entry_id][DATA_BATTERY_SESSIONS]
+    else:
+        _LOGGER.warning("Battery session coordinator not found for entry %s", config_entry.entry_id)
+
+    device_id = "cm3sunryl0000tc3nhygweghn"
+    if DATA_BATTERIES in coordinator.data and coordinator.data[DATA_BATTERIES]:
+        api = coordinator.api  # type: ignore[attr-defined]
+        session_coordinator: FrankEnergieBatterySessionCoordinator = FrankEnergieBatterySessionCoordinator(
+            hass,
+            config_entry,
+            api,
+            device_id
+        )
+
+        try:
+            await session_coordinator.async_config_entry_first_refresh()
+        except Exception as err:
+            _LOGGER.exception("Failed to refresh battery session coordinator: %s", err)
+        else:
+            hass.data[DOMAIN][config_entry.entry_id][DATA_BATTERY_SESSIONS] = session_coordinator
+            _LOGGER.debug("Battery session coordinator initialized and stored for entry %s", config_entry.entry_id)
+    else:
+        session_coordinator = None
+        _LOGGER.debug("No smart batteries found for entry %s; skipping battery session coordinator setup",
+                      config_entry.entry_id)
 
     # Add an entity for each sensor type, when authenticated is True,
     # only add the entity if the user is authenticated
-    entities = [
+    # entities: list[SensorEntity] = []
+    # entities: list[FrankEnergieSensor] = []
+    # entities: list[FrankEnergieBatterySessionSensor] = []
+    entities: list = [
         FrankEnergieSensor(coordinator, description, config_entry)
         for description in SENSOR_TYPES
         if not description.authenticated or coordinator.api.is_authenticated
@@ -2613,14 +2839,26 @@ async def async_setup_entry(
     # _LOGGER.debug("coordinator.enode_chargers chargers: %d", coordinator.data.get('enode_chargers').get('chargers'))
 
     # coordinator.data.get(DATA_BATTERIES)) = <class 'python_frank_energie.models.SmartBatteries'>
-    if (batteries := coordinator.data.get(DATA_BATTERIES)):
+    if (batteries := coordinator.data.get(DATA_BATTERIES)) and batteries.smart_batteries:
         _LOGGER.debug("Setting up smart battery sensors: %s", batteries)
+        # SmartBatteries(smart_batteries=[SmartBatteries.SmartBattery(brand='Sessy', capacity=5.2, external_reference='AJM6UPPP', id='cm3sunryl0000tc3nhygweghn', max_charge_power=2.2, max_discharge_power=1.7, provider='SESSY', created_at=datetime.datetime(2024, 11, 22, 14, 41, 47, 853000, tzinfo=datetime.timezone.utc), updated_at=datetime.datetime(2025, 2, 7, 22, 3, 21, 898000, tzinfo=datetime.timezone.utc))])
+        # <class 'python_frank_energie.models.SmartBatteries'>
         _LOGGER.debug("Setting up smart battery type: %s", type(batteries))
-        _LOGGER.debug("Setting up smart battery sensors: %d", len(batteries.smart_batteries))
-        _LOGGER.debug("Setting up smart battery type: %s", type(batteries.smart_batteries))
+        _LOGGER.debug("Number of smart battery sensors: %d", len(batteries.smart_batteries))
+        _LOGGER.debug("Setting up smart battery type: %s", type(batteries.smart_batteries))  # <class 'list'>
+        dynamic_battery_descriptions = _build_dynamic_smart_batteries_descriptions(batteries.smart_batteries)
         for i, battery in enumerate(batteries.smart_batteries):
-            dynamic_battery_descriptions = _build_dynamic_smart_batteries_descriptions(batteries.smart_batteries)
-            _LOGGER.debug("Setting up smart battery capacity: %d", battery.capacity)
+            _LOGGER.debug("Setting up smart battery: %s", battery)
+            _LOGGER.debug("Setting up smart battery type: %s", type(battery))
+            _LOGGER.debug("Setting up smart battery brand: %s", battery.brand)
+            _LOGGER.debug("Setting up smart battery id: %s", battery.id)
+            _LOGGER.debug("Setting up smart battery external_reference: %s", battery.external_reference)
+            _LOGGER.debug("Setting up smart battery max_charge_power: %s", battery.max_charge_power)
+            _LOGGER.debug("Setting up smart battery max_discharge_power: %s", battery.max_discharge_power)
+            _LOGGER.debug("Setting up smart battery provider: %s", battery.provider)
+            _LOGGER.debug("Setting up smart battery created_at: %s", battery.created_at)
+            _LOGGER.debug("Setting up smart battery updated_at: %s", battery.updated_at)
+            _LOGGER.debug("Setting up smart battery capacity: %s", battery.capacity)
             sensor_descriptions = list(STATIC_BATTERY_SENSOR_TYPES) + \
                 dynamic_battery_descriptions
 
@@ -2628,6 +2866,27 @@ async def async_setup_entry(
                 if not description.authenticated or coordinator.api.is_authenticated:
                     entities.append(FrankEnergieSensor(coordinator, description, config_entry))
                     _LOGGER.debug("Added sensor for battery %d: %s", i, description.key)
+
+            # Create sensors for each battery session if session coordinator is available
+            if session_coordinator and session_coordinator.data:
+                # for battery_id in session_coordinator.data:
+                for battery_id in session_coordinator.data.sessions:
+                    _LOGGER.debug("Creating battery session sensors for battery: %s", battery_id)
+                    for description in BATTERY_SESSION_SENSOR_DESCRIPTIONS:
+                        if not description.authenticated or coordinator.api.is_authenticated:
+                            _LOGGER.debug("Adding battery session sensor: %s for battery: %s",
+                                          description.key, battery_id.trading_result)
+                            entities.append(
+                                FrankEnergieBatterySessionSensor(
+                                    coordinator,
+                                    session_coordinator,
+                                    description,
+                                    battery_id
+                                )
+                            )
+            else:
+                _LOGGER.debug("No session coordinator data found for entry %s", config_entry.entry_id)
+
     # Register the sensors to Home Assistant
     try:
         async_add_entities(entities, True)

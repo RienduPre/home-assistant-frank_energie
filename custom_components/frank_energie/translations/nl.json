@@ -24,6 +24,17 @@
                     "authentication": "Gebruik Frank Energie-accountgegevens"
                 }
             },
+            "site": {
+                "title": "Kies leveringslocatie",
+                "description": "Selecteer de leveringslocatie die je toe wilt voegen",
+                "data": {
+                    "site_reference": "Leveringslocaties:"
+                }
+            },
+            "confirm": {
+                "title": "Frank Energie",
+                "description": "Wil je deze integratie toevoegen?"
+            },
             "reconfigure": {
                 "title": "Inloggen bij Frank Energie",
                 "data": {
@@ -67,6 +78,18 @@
             "name": "Frank Energie - Gebruiker",
             "model": {
                 "User": "Gebruiker"
+            }
+        },
+        "Frank Energie - Chargers": {
+            "name": "Frank Energie - Opladers",
+            "model": {
+                "Chargers": "Opladers"
+            }
+        },
+        "Frank Energie - Batteries": {
+            "name": "Frank Energie - Batterijen",
+            "model": {
+                "Batteries": "Batterijen"
             }
         }
     },
@@ -423,10 +446,10 @@
             "usage_gas_yesterday": {
                 "name": "Verbruik gas gisteren"
             },
-            "costs_feed_in_yesterday": {
+            "gains_feed_in_yesterday": {
                 "name": "Opbrengst elektriciteit gisteren"
             },
-            "usage_feed_in_yesterday": {
+            "delivered_feed_in_yesterday": {
                 "name": "Geleverde elektriciteit gisteren"
             },
             "delivery_site": {
