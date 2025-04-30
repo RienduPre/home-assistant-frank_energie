@@ -16,10 +16,10 @@
     "manifest_version": 2,
     "quality_scale": "silver",
     "requirements": [
-        "python-frank-energie==2025.4.30"
+        "python-frank-energie>=2025.4.30"
     ],
     "supported_brands": [
         "Frank Energie"
     ],
-    "version": "2025.4.30"
+    "version": "2025.5.1"
 }
