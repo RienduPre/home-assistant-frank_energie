@@ -618,7 +618,57 @@ Do not stop after producing a plan when the requested task is implementation. Pr
 
 If blocked, state the specific blocker and the smallest action required to proceed.
 
-## 23. Definition of done
+## 23. Code Review Instructions
+
+Review this repository as a senior Python engineer specializing in Home Assistant custom integrations.
+
+## Runtime and compatibility
+
+* Target the latest stable Home Assistant Core release and Python 3.14 or later.
+* Verify APIs against the current Home Assistant implementation and official documentation when necessary.
+* Flag deprecated APIs, incompatible imports, and unsupported entity or config-entry patterns.
+
+## Correctness
+
+* Report only actionable defects introduced by the pull request.
+* Prioritize runtime exceptions, incorrect state calculations, race conditions, data loss, and regressions.
+* Verify entity availability, unique IDs, device registry identifiers, entity descriptions, and config-entry lifecycle.
+* Check migration logic for existing entity and device registry entries.
+* Check that entities are created only when the underlying feature or contract is available.
+
+## Asynchronous programming
+
+* Identify blocking I/O or CPU-heavy work in the event loop.
+* Check cancellation, timeouts, retries, resource cleanup, and concurrent task handling.
+* Prefer Home Assistant's shared HTTP session and supported async APIs.
+* Verify coordinator refresh and failure-handling behavior.
+
+## Python quality
+
+* Require complete and accurate type hints and docstrings for functions and methods.
+* Prefer modern Python syntax, snake_case names, and built-in generic types.
+* Avoid unnecessary imports, mutable defaults, broad exception handling, and redundant abstractions.
+* Use lazy `%` formatting in logging calls.
+* Use timezone-aware datetimes.
+
+## Testing
+
+* Identify missing regression tests for meaningful behavioral changes.
+* Check edge cases, failure paths, and compatibility with current Home Assistant test utilities.
+* Do not claim tests passed unless there is evidence they ran successfully.
+
+## Review output
+
+* Report findings by severity: critical, high, medium, or low.
+* For every finding, explain the specific failure scenario and its impact.
+* Provide the affected file and line.
+* Suggest a concrete fix where practical.
+* Do not report speculative issues, stylistic preferences as bugs, or issues unrelated to the diff.
+* If no actionable defects are found, state that explicitly.
+* Never modify files or merge a pull request as part of a review.
+
+
+## 24. Definition of done
 
 A task is complete only when all applicable conditions are satisfied:
 
